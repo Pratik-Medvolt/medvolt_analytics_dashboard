@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}
+System Health
+{% endblock %}
+
+{% block content %}
+
+<div class="health-page">
+
+    <div class="health-header">
+
+        <div>
+            <p class="health-eyebrow">
+                ANALYTICS OPERATIONS
+            </p>
+
+            <h1>
+                System Health
+            </h1>
+
+            <p>
+                Review collector status, processing
+                activity and recent errors.
+            </p>
+        </div>
+
+        <div
+            class="health-overall
+            health-overall-{{ overall_status }}"
+        >
+            {% if overall_status == "success" %}
+                All Systems Operational
+            {% elif overall_status == "failed" %}
+                Attention Required
+            {% elif overall_status == "warning" %}
+                Collection In Progress
+            {% else %}
+                No Activity Available
+            {% endif %}
+        </div>
+
+    </div>
+
+    <div class="health-kpi-grid">
+
+        <div class="health-kpi-card">
+            <span>
+                Connected Modules
+            </span>
+
+            <strong>
+                {{ module_count }}
+            </strong>
+
+            <small>
+                Analytics processes tracked
+            </small>
+        </div>
+
+        <div class="health-kpi-card">
+            <span>
+                Successful
+            </span>
+
+            <strong>
+                {{ success_count }}
+            </strong>
+
+            <small>
+                Latest successful executions
+            </small>
+        </div>
+
+        <div class="health-kpi-card">
+            <span>
+                Failed
+            </span>
+
+            <strong>
+                {{ failed_count }}
+            </strong>
+
+            <small>
+                Modules requiring attention
+            </small>
+        </div>
+
+        <div class="health-kpi-card">
+            <span>
+                Last Activity
+            </span>
+
+            <strong class="health-date-value">
+                {% if last_activity %}
+                    {{ last_activity|date:"d M, H:i" }}
+                {% else %}
+                    —
+                {% endif %}
+            </strong>
+
+            <small>
+                Latest completed process
+            </small>
+        </div>
+
+    </div>
+
+    <section class="health-panel">
+
+        <div class="health-panel-header">
+            <div>
+                <h2>
+                    Collector Status
+                </h2>
+
+                <p>
+                    Latest execution for each analytics
+                    process.
+                </p>
+            </div>
+        </div>
+
+        <div class="health-module-grid">
+
+            {% for log in latest_logs %}
+
+                <article class="health-module-card">
+
+                    <div class="health-module-top">
+
+                        <div>
+                            <h3>
+                                {{ log.display_name }}
+                            </h3>
+
+                            <span>
+                                {{ log.module }}
+                            </span>
+                        </div>
+
+                        <strong
+                            class="health-status
+                            health-status-{{ log.status }}"
+                        >
+                            {{ log.status|title }}
+                        </strong>
+
+                    </div>
+
+                    <div class="health-module-details">
+
+                        <div>
+                            <span>
+                                Records Processed
+                            </span>
+
+                            <strong>
+                                {{ log.records_processed }}
+                            </strong>
+                        </div>
+
+                        <div>
+                            <span>
+                                Completed
+                            </span>
+
+                            <strong>
+                                {% if log.completed_at %}
+                                    {{ log.completed_at|date:"d M Y, H:i" }}
+                                {% else %}
+                                    In progress
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                    </div>
+
+                    {% if log.error_message %}
+                        <div class="health-error">
+                            {{ log.error_message }}
+                        </div>
+                    {% endif %}
+
+                </article>
+
+            {% empty %}
+
+                <div class="health-empty">
+                    No system activity has been
+                    recorded yet.
+                </div>
+
+            {% endfor %}
+
+        </div>
+
+    </section>
+
+</div>
+
+{% endblock %}

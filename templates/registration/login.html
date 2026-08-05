@@ -1,0 +1,173 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Sign In | Medvolt Analytics
+    </title>
+
+    <link
+        rel="preconnect"
+        href="https://fonts.googleapis.com"
+    >
+
+    <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{% static 'css/dashboard.css' %}?v=4"
+    >
+</head>
+
+<body class="login-body">
+
+<div class="login-page">
+
+    <section class="login-brand-panel">
+
+        <div class="login-brand">
+
+            <div class="login-brand-logo">
+                M
+            </div>
+
+            <div>
+                <strong>
+                    Medvolt
+                </strong>
+
+                <span>
+                    Analytics Engine
+                </span>
+            </div>
+
+        </div>
+
+        <div class="login-brand-content">
+
+            <p class="login-eyebrow">
+                MEDVOLT ANALYTICS
+            </p>
+
+            <h1>
+                One secure view of your analytics.
+            </h1>
+
+            <p>
+                Monitor website traffic, organic
+                search, MailerLite campaigns, weekly
+                reports and system health.
+            </p>
+
+        </div>
+
+    </section>
+
+    <section class="login-form-panel">
+
+        <div class="login-card">
+
+            <div class="login-card-header">
+
+                <h2>
+                    Welcome back
+                </h2>
+
+                <p>
+                    Sign in using your Medvolt
+                    analytics account.
+                </p>
+
+            </div>
+
+            {% if form.non_field_errors %}
+                <div class="login-error">
+                    Invalid username or password.
+                </div>
+            {% endif %}
+
+            <form method="post">
+
+                {% csrf_token %}
+
+                {% if next %}
+                    <input
+                        type="hidden"
+                        name="next"
+                        value="{{ next }}"
+                    >
+                {% endif %}
+
+                <div class="login-field">
+
+                    <label for="id_username">
+                        Username
+                    </label>
+
+                    <input
+                        type="text"
+                        name="username"
+                        id="id_username"
+                        autocomplete="username"
+                        autofocus
+                        required
+                    >
+
+                </div>
+
+                <div class="login-field">
+
+                    <label for="id_password">
+                        Password
+                    </label>
+
+                    <input
+                        type="password"
+                        name="password"
+                        id="id_password"
+                        autocomplete="current-password"
+                        required
+                    >
+
+                </div>
+
+                <button
+                    type="submit"
+                    class="login-button"
+                >
+                    Sign In
+                </button>
+
+            </form>
+
+            <p class="login-security-note">
+                Access is restricted to authorized
+                Medvolt team members.
+            </p>
+
+        </div>
+
+    </section>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+
+{% block title %}
+    MailerLite | Medvolt Analytics
+{% endblock %}
+
+
+{% block content %}
+
+<section class="welcome-section">
+
+    <div>
+        <h2>
+            MailerLite Campaign Analytics
+        </h2>
+
+        <p>
+            Campaign opens, clicks, rates and
+            subscriber engagement.
+        </p>
+    </div>
+
+    {% if latest_snapshot %}
+        <div class="last-updated">
+            Updated {{ latest_snapshot|date:"d M Y" }}
+        </div>
+    {% endif %}
+
+</section>
+
+
+<section class="kpi-grid kpi-grid-five">
+
+    <article class="kpi-card">
+        <div class="kpi-label">
+            Campaigns
+        </div>
+
+        <div class="kpi-value">
+            {{ campaign_count }}
+        </div>
+
+        <div class="kpi-description">
+            Latest snapshot
+        </div>
+    </article>
+
+
+    <article class="kpi-card">
+        <div class="kpi-label">
+            Unique Opens
+        </div>
+
+        <div class="kpi-value">
+            {{ total_opens }}
+        </div>
+
+        <div class="kpi-description">
+            Total campaign opens
+        </div>
+    </article>
+
+
+    <article class="kpi-card">
+        <div class="kpi-label">
+            Open Rate
+        </div>
+
+        <div class="kpi-value">
+            {{ average_open_rate }}%
+        </div>
+
+        <div class="kpi-description">
+            Average campaign rate
+        </div>
+    </article>
+
+
+    <article class="kpi-card">
+        <div class="kpi-label">
+            Unique Clicks
+        </div>
+
+        <div class="kpi-value">
+            {{ total_clicks }}
+        </div>
+
+        <div class="kpi-description">
+            Total campaign clicks
+        </div>
+    </article>
+
+
+    <article class="kpi-card">
+        <div class="kpi-label">
+            Click Rate
+        </div>
+
+        <div class="kpi-value">
+            {{ average_click_rate }}%
+        </div>
+
+        <div class="kpi-description">
+            Average campaign rate
+        </div>
+    </article>
+
+</section>
+
+
+<section class="dashboard-layout">
+
+    <article class="panel panel-wide">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Top Campaign Engagement
+                </h3>
+
+                <p>
+                    Opens and clicks by campaign
+                </p>
+            </div>
+
+        </div>
+
+        <div class="chart-wrapper">
+            <canvas id="mailerliteCampaignChart"></canvas>
+        </div>
+
+    </article>
+
+
+    <article class="panel">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Collector Status
+                </h3>
+
+                <p>
+                    Latest MailerLite collection
+                </p>
+            </div>
+
+        </div>
+
+        {% if latest_log %}
+
+            <div class="rate-summary">
+
+                <div class="rate-item">
+                    <span>Status</span>
+
+                    <strong class="status-{{ latest_log.status }}">
+                        {{ latest_log.status|title }}
+                    </strong>
+                </div>
+
+                <div class="rate-item">
+                    <span>Records processed</span>
+
+                    <strong>
+                        {{ latest_log.records_processed }}
+                    </strong>
+                </div>
+
+                <div class="rate-item">
+                    <span>Completed</span>
+
+                    <strong>
+                        {% if latest_log.completed_at %}
+                            {{ latest_log.completed_at|date:"d M, H:i" }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+            </div>
+
+        {% else %}
+
+            <div class="empty-state">
+                No collector logs available.
+            </div>
+
+        {% endif %}
+
+    </article>
+
+</section>
+
+
+<section class="panel">
+
+    <div class="panel-header">
+
+        <div>
+            <h3>
+                Campaign Performance
+            </h3>
+
+            <p>
+                Latest MailerLite analytics snapshot
+            </p>
+        </div>
+
+    </div>
+
+    <div class="table-scroll">
+
+        <table class="dashboard-table">
+
+            <thead>
+                <tr>
+                    <th>Campaign</th>
+                    <th>Sent Date</th>
+                    <th>Opens</th>
+                    <th>Open Rate</th>
+                    <th>Clicks</th>
+                    <th>Click Rate</th>
+                    <th>Unsubscribes</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                {% for campaign in campaigns %}
+
+                    <tr>
+
+                        <td>
+                            <strong>
+                                {{ campaign.subject }}
+                            </strong>
+
+                            <span class="table-subtext">
+                                {{ campaign.campaign_id }}
+                            </span>
+                        </td>
+
+                        <td>
+                            {% if campaign.sent_date %}
+                                {{ campaign.sent_date|date:"d M Y" }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {{ campaign.opens }}
+                        </td>
+
+                        <td>
+                            {{ campaign.open_rate|floatformat:2 }}%
+                        </td>
+
+                        <td>
+                            {{ campaign.clicks }}
+                        </td>
+
+                        <td>
+                            {{ campaign.click_rate|floatformat:2 }}%
+                        </td>
+
+                        <td>
+                            {{ campaign.unsubscribes }}
+                        </td>
+
+                    </tr>
+
+                {% empty %}
+
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                No campaign analytics available.
+                            </div>
+                        </td>
+                    </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+{% endblock %}
+
+
+{% block extra_js %}
+
+<script>
+    const labels = {{ chart_labels|safe }};
+    const opens = {{ chart_opens|safe }};
+    const clicks = {{ chart_clicks|safe }};
+
+    const campaignCanvas = document.getElementById(
+        "mailerliteCampaignChart"
+    );
+
+    const colors = window.MEDVOLT_CHART_COLORS || {
+        green: "#1baf7a",
+        blue: "#2a78d6"
+    };
+
+    if (campaignCanvas) {
+        new Chart(campaignCanvas, {
+            type: "bar",
+
+            data: {
+                labels: labels,
+
+                datasets: [
+                    {
+                        label: "Unique Opens",
+                        data: opens,
+                        backgroundColor: colors.green,
+                        borderColor: colors.green,
+                        borderWidth: 1,
+                        borderRadius: 6
+                    },
+                    {
+                        label: "Unique Clicks",
+                        data: clicks,
+                        backgroundColor: colors.blue,
+                        borderColor: colors.blue,
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                plugins: {
+                    legend: {
+                        position: "bottom"
+                    }
+                },
+
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+</script>
+
+{% endblock %}

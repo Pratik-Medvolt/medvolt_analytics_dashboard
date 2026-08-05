@@ -1,0 +1,600 @@
+{% extends "base.html" %}
+
+{% block title %}
+Search Console Analytics
+{% endblock %}
+
+{% block content %}
+
+<div class="sc-page">
+
+    <div class="sc-header">
+        <div>
+            <p class="sc-eyebrow">
+                ORGANIC SEARCH PERFORMANCE
+            </p>
+
+            <h1>
+                Search Console Analytics
+            </h1>
+
+            <p class="sc-description">
+                Monitor search visibility, clicks,
+                impressions, queries and ranking
+                position for Medvolt website content.
+            </p>
+        </div>
+
+        <div class="sc-period-filter">
+            <a
+                href="?days=7"
+                class="{% if selected_days == 7 %}active{% endif %}"
+            >
+                7 Days
+            </a>
+
+            <a
+                href="?days=30"
+                class="{% if selected_days == 30 %}active{% endif %}"
+            >
+                30 Days
+            </a>
+
+            <a
+                href="?days=90"
+                class="{% if selected_days == 90 %}active{% endif %}"
+            >
+                90 Days
+            </a>
+        </div>
+    </div>
+
+    <div class="sc-date-row">
+        <span>
+            {{ start_date|date:"d M Y" }}
+            –
+            {{ end_date|date:"d M Y" }}
+        </span>
+
+        {% if latest_metric_date %}
+            <span>
+                Latest data:
+                {{ latest_metric_date|date:"d M Y" }}
+            </span>
+        {% endif %}
+    </div>
+
+    <div class="sc-kpi-grid">
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Total Clicks
+            </span>
+
+            <strong>
+                {{ total_clicks|default:0 }}
+            </strong>
+
+            <span class="sc-kpi-note">
+                Organic visits from Google
+            </span>
+        </div>
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Total Impressions
+            </span>
+
+            <strong>
+                {{ total_impressions|default:0 }}
+            </strong>
+
+            <span class="sc-kpi-note">
+                Search result appearances
+            </span>
+        </div>
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Average CTR
+            </span>
+
+            <strong>
+                {{ average_ctr|floatformat:2 }}%
+            </strong>
+
+            <span class="sc-kpi-note">
+                Click-through rate
+            </span>
+        </div>
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Average Position
+            </span>
+
+            <strong>
+                {{ average_position|floatformat:2 }}
+            </strong>
+
+            <span class="sc-kpi-note">
+                Weighted search ranking
+            </span>
+        </div>
+
+    </div>
+
+    <div class="sc-chart-grid">
+
+        <section class="sc-panel sc-panel-wide">
+            <div class="sc-panel-header">
+                <div>
+                    <h2>
+                        Search Performance
+                    </h2>
+
+                    <p>
+                        Daily clicks and impressions
+                    </p>
+                </div>
+            </div>
+
+            <div class="sc-split-charts">
+
+                <div class="sc-mini-chart">
+                    <div class="sc-mini-chart-label">
+                        <span class="sc-mini-chart-dot sc-mini-chart-dot-clicks"></span>
+                        Clicks
+                    </div>
+
+                    <div class="sc-mini-chart-wrapper">
+                        <canvas id="searchClicksChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="sc-mini-chart">
+                    <div class="sc-mini-chart-label">
+                        <span class="sc-mini-chart-dot sc-mini-chart-dot-impressions"></span>
+                        Impressions
+                    </div>
+
+                    <div class="sc-mini-chart-wrapper">
+                        <canvas id="searchImpressionsChart"></canvas>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <section class="sc-panel">
+            <div class="sc-panel-header">
+                <div>
+                    <h2>
+                        Top Queries
+                    </h2>
+
+                    <p>
+                        Queries generating clicks
+                    </p>
+                </div>
+            </div>
+
+            <div class="sc-chart-wrapper">
+                <canvas
+                    id="topQueriesChart"
+                ></canvas>
+            </div>
+        </section>
+
+    </div>
+
+    <section class="sc-panel sc-table-panel">
+
+        <div class="sc-panel-header">
+            <div>
+                <h2>
+                    Query Performance
+                </h2>
+
+                <p>
+                    Leading Google searches for
+                    Medvolt content
+                </p>
+            </div>
+        </div>
+
+        <div class="sc-table-wrapper">
+            <table class="sc-table">
+                <thead>
+                    <tr>
+                        <th>Query</th>
+                        <th>Clicks</th>
+                        <th>Impressions</th>
+                        <th>CTR</th>
+                        <th>Position</th>
+                        <th>Pages</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for query in top_queries %}
+                        <tr>
+                            <td class="sc-query-cell">
+                                {{ query.query }}
+                            </td>
+
+                            <td>
+                                {{ query.clicks }}
+                            </td>
+
+                            <td>
+                                {{ query.impressions }}
+                            </td>
+
+                            <td>
+                                {{ query.ctr_percentage|floatformat:2 }}%
+                            </td>
+
+                            <td>
+                                {{ query.calculated_position|floatformat:2 }}
+                            </td>
+
+                            <td>
+                                {{ query.page_count }}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td
+                                colspan="6"
+                                class="sc-empty"
+                            >
+                                No Search Console data
+                                is available for this
+                                period.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </section>
+
+    <section class="sc-panel sc-table-panel">
+
+        <div class="sc-panel-header">
+            <div>
+                <h2>
+                    Page Performance
+                </h2>
+
+                <p>
+                    Website pages receiving organic
+                    visibility
+                </p>
+            </div>
+        </div>
+
+        <div class="sc-table-wrapper">
+            <table class="sc-table">
+                <thead>
+                    <tr>
+                        <th>Page</th>
+                        <th>Clicks</th>
+                        <th>Impressions</th>
+                        <th>CTR</th>
+                        <th>Position</th>
+                        <th>Queries</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for page in top_pages %}
+                        <tr>
+                            <td class="sc-page-cell">
+                                <strong>
+                                    {% if page.content__title %}
+                                        {{ page.content__title }}
+                                    {% else %}
+                                        Website Page
+                                    {% endif %}
+                                </strong>
+
+                                <a
+                                    href="{{ page.page_url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    {{ page.page_url }}
+                                </a>
+                            </td>
+
+                            <td>
+                                {{ page.clicks }}
+                            </td>
+
+                            <td>
+                                {{ page.impressions }}
+                            </td>
+
+                            <td>
+                                {{ page.ctr_percentage|floatformat:2 }}%
+                            </td>
+
+                            <td>
+                                {{ page.calculated_position|floatformat:2 }}
+                            </td>
+
+                            <td>
+                                {{ page.query_count }}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td
+                                colspan="6"
+                                class="sc-empty"
+                            >
+                                No page performance
+                                data is available.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </section>
+
+    <section class="sc-panel sc-status-panel">
+
+        <div class="sc-panel-header">
+            <div>
+                <h2>
+                    Collector Status
+                </h2>
+
+                <p>
+                    Latest Search Console collection
+                </p>
+            </div>
+        </div>
+
+        {% if latest_log %}
+            <div class="sc-status-grid">
+
+                <div>
+                    <span>Status</span>
+
+                    <strong
+                        class="sc-status sc-status-{{ latest_log.status }}"
+                    >
+                        {{ latest_log.status|title }}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Records Processed</span>
+
+                    <strong>
+                        {{ latest_log.records_processed }}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Completed</span>
+
+                    <strong>
+                        {% if latest_log.completed_at %}
+                            {{ latest_log.completed_at|date:"d M Y, H:i" }}
+                        {% else %}
+                            In progress
+                        {% endif %}
+                    </strong>
+                </div>
+
+            </div>
+
+            {% if latest_log.error_message %}
+                <div class="sc-log-error">
+                    {{ latest_log.error_message }}
+                </div>
+            {% endif %}
+        {% else %}
+            <p class="sc-empty">
+                No Search Console collection log
+                is available.
+            </p>
+        {% endif %}
+
+    </section>
+
+</div>
+
+{{ daily_labels|json_script:"sc-daily-labels" }}
+{{ daily_clicks|json_script:"sc-daily-clicks" }}
+{{ daily_impressions|json_script:"sc-daily-impressions" }}
+{{ daily_ctr|json_script:"sc-daily-ctr" }}
+{{ query_labels|json_script:"sc-query-labels" }}
+{{ query_clicks|json_script:"sc-query-clicks" }}
+
+{% endblock %}
+
+{% block extra_js %}
+
+<script>
+document.addEventListener(
+    "DOMContentLoaded",
+    function () {
+        const dailyLabels = JSON.parse(
+            document.getElementById(
+                "sc-daily-labels"
+            ).textContent
+        );
+
+        const dailyClicks = JSON.parse(
+            document.getElementById(
+                "sc-daily-clicks"
+            ).textContent
+        );
+
+        const dailyImpressions = JSON.parse(
+            document.getElementById(
+                "sc-daily-impressions"
+            ).textContent
+        );
+
+        const queryLabels = JSON.parse(
+            document.getElementById(
+                "sc-query-labels"
+            ).textContent
+        );
+
+        const queryClicks = JSON.parse(
+            document.getElementById(
+                "sc-query-clicks"
+            ).textContent
+        );
+
+        const colors = window.MEDVOLT_CHART_COLORS || {
+            green: "#1baf7a",
+            blue: "#2a78d6",
+            greenSoft: "rgba(27, 175, 122, 0.14)",
+            grid: "rgba(23, 36, 31, 0.06)",
+        };
+
+        // Clicks and impressions live on very different scales, so this is
+        // two single-axis charts rather than one dual-axis combo chart —
+        // a dual y-axis makes the two lines' crossing point meaningless.
+        function buildDailyChart(canvasId, data, color, fillColor) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || typeof Chart === "undefined") return;
+
+            new Chart(canvas, {
+                type: "line",
+
+                data: {
+                    labels: dailyLabels,
+
+                    datasets: [
+                        {
+                            data: data,
+                            borderColor: color,
+                            backgroundColor: fillColor,
+                            borderWidth: 2,
+                            tension: 0.35,
+                            fill: true,
+                            pointRadius: 2,
+                        },
+                    ],
+                },
+
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+
+                    interaction: {
+                        mode: "index",
+                        intersect: false,
+                    },
+
+                    plugins: {
+                        legend: {
+                            display: false,
+                        },
+                    },
+
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: colors.grid,
+                            },
+                        },
+
+                        x: {
+                            grid: {
+                                display: false,
+                            },
+                        },
+                    },
+                },
+            });
+        }
+
+        buildDailyChart(
+            "searchClicksChart",
+            dailyClicks,
+            colors.green,
+            colors.greenSoft
+        );
+
+        buildDailyChart(
+            "searchImpressionsChart",
+            dailyImpressions,
+            colors.blue,
+            colors.blueSoft
+        );
+
+        const queryCanvas =
+            document.getElementById(
+                "topQueriesChart"
+            );
+
+        if (
+            queryCanvas
+            && typeof Chart !== "undefined"
+        ) {
+            new Chart(
+                queryCanvas,
+                {
+                    type: "bar",
+
+                    data: {
+                        labels: queryLabels,
+
+                        datasets: [
+                            {
+                                label: "Clicks",
+                                data: queryClicks,
+                                backgroundColor: colors.green,
+                                borderRadius: 6,
+                            },
+                        ],
+                    },
+
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: "y",
+
+                        plugins: {
+                            legend: {
+                                display: false,
+                            },
+                        },
+
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                grid: {
+                                    color: colors.grid,
+                                },
+                            },
+
+                            y: {
+                                grid: {
+                                    display: false,
+                                },
+                            },
+                        },
+                    },
+                }
+            );
+        }
+    }
+);
+</script>
+
+{% endblock %}

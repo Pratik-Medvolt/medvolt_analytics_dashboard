@@ -1,0 +1,3 @@
+from analytics_engine.processors.scoring_engine import run_scoring_engine
+
+run_scoring_engine()

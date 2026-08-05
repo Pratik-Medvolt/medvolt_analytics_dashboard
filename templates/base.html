@@ -1,0 +1,307 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        {% block title %}
+            Medvolt Analytics
+        {% endblock %}
+    </title>
+
+    <link
+        rel="icon"
+        type="image/svg+xml"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d7654'/%3E%3Ctext x='16' y='22' font-family='Arial, sans-serif' font-size='17' font-weight='700' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E"
+    >
+
+    <meta name="theme-color" content="#10241e">
+
+    <link
+        rel="preconnect"
+        href="https://fonts.googleapis.com"
+    >
+
+    <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{% static 'css/dashboard.css' %}?v=5"
+    >
+
+    {% block extra_css %}
+    {% endblock %}
+</head>
+
+<body>
+
+<div class="app-shell">
+
+    <div
+        class="sidebar-overlay"
+        data-sidebar-overlay
+    ></div>
+
+    <aside
+        class="sidebar"
+        data-sidebar
+    >
+
+        <div class="brand">
+
+            <div class="brand-logo">
+                M
+            </div>
+
+            <div>
+                <div class="brand-title">
+                    Medvolt
+                </div>
+
+                <div class="brand-subtitle">
+                    Analytics Engine
+                </div>
+            </div>
+
+            <button
+                type="button"
+                class="sidebar-close"
+                data-sidebar-close
+                aria-label="Close navigation menu"
+            >
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+
+        </div>
+
+        <nav class="sidebar-navigation">
+
+            <a
+                href="{% url 'dashboard:overview' %}"
+                class="sidebar-link
+                {% if request.resolver_match.url_name == 'overview' %}
+                    active
+                {% endif %}"
+            >
+                <span class="sidebar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h5v-5h2v5h5v-9.5"/></svg>
+                </span>
+
+                <span>
+                    Overview
+                </span>
+            </a>
+
+            <a
+                href="{% url 'dashboard:search_console' %}"
+                class="sidebar-link
+                {% if request.resolver_match.url_name == 'search_console' %}
+                    active
+                {% endif %}"
+            >
+                <span class="sidebar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>
+                </span>
+
+                <span>
+                    Search Console
+                </span>
+            </a>
+
+            <a
+                href="{% url 'dashboard:website' %}"
+                class="sidebar-link
+                {% if request.resolver_match.url_name == 'website' %}
+                    active
+                {% endif %}"
+            >
+                <span class="sidebar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16 10 10l4 4 6-7"/><path d="M17 7h3v3"/></svg>
+                </span>
+
+                <span>
+                    Website Analytics
+                </span>
+            </a>
+
+            <a
+                href="{% url 'dashboard:mailerlite' %}"
+                class="sidebar-link
+                {% if request.resolver_match.url_name == 'mailerlite' %}
+                    active
+                {% endif %}"
+            >
+                <span class="sidebar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+                </span>
+
+                <span>
+                    MailerLite
+                </span>
+            </a>
+
+            <a
+                href="{% url 'dashboard:system_health' %}"
+                class="sidebar-link
+                {% if request.resolver_match.url_name == 'system_health' %}
+                    active
+                {% endif %}"
+>
+                <span class="sidebar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-7 5 14 2.5-7H21"/></svg>
+                </span>
+
+                <span>
+                    System Health
+                </span>
+            </a>
+
+            <a
+                href="{% url 'dashboard:weekly_reports' %}"
+                class="sidebar-link
+                {% if request.resolver_match.url_name == 'weekly_reports' %}
+                    active
+                {% endif %}"
+            >
+                <span class="sidebar-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-6"/></svg>
+                </span>
+
+                <span>
+                    Weekly Reports
+                </span>
+            </a>
+
+        </nav>
+
+        <div class="sidebar-footer">
+
+            <div class="system-dot"></div>
+
+            <div>
+                <div class="system-status-title">
+                    Analytics system
+                </div>
+
+                <div class="system-status-text">
+                    Database connected
+                </div>
+            </div>
+
+        </div>
+
+    </aside>
+
+    <main class="main-area">
+
+        <header class="topbar">
+
+            <button
+                type="button"
+                class="sidebar-toggle"
+                data-sidebar-toggle
+                aria-label="Open navigation menu"
+            >
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            </button>
+
+            <div class="topbar-heading">
+
+                <h1 class="page-title">
+                    {{ page_title }}
+                </h1>
+
+                <p class="page-subtitle">
+                    Track Medvolt's content and
+                    marketing performance
+                </p>
+
+            </div>
+
+            <div class="topbar-actions">
+
+                <div class="date-badge">
+                    {% now "d M Y" %}
+                </div>
+
+                <div class="user-account">
+
+                    <div class="profile-avatar">
+                        {{ request.user.username|first|upper }}
+                    </div>
+
+                    <div class="user-account-details">
+
+                        <strong>
+                            {% firstof request.user.get_full_name request.user.username %}
+                        </strong>
+
+                        <span>
+                            {{ request.user.email|default:"Team member" }}
+                        </span>
+
+                    </div>
+
+                    <form
+                        method="post"
+                        action="{% url 'dashboard:logout' %}"
+    >
+                        {% csrf_token %}
+
+                        <button
+                            type="submit"
+                            class="logout-button"
+        >
+                            Logout
+                        </button>
+                    </form>
+
+                </div>
+
+
+
+            </div>
+
+        </header>
+
+        <section class="page-container">
+
+            {% block content %}
+            {% endblock %}
+
+        </section>
+
+    </main>
+
+</div>
+
+<script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+></script>
+
+<script
+    src="{% static 'js/dashboard.js' %}"
+></script>
+
+{% block extra_js %}
+{% endblock %}
+
+</body>
+</html>

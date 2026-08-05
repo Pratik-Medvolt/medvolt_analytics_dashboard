@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+
+{% block title %}
+Weekly Reports
+{% endblock %}
+
+{% block content %}
+
+<div class="weekly-page">
+
+    <div class="weekly-header">
+        <div>
+            <p class="weekly-eyebrow">
+                PERFORMANCE SUMMARY
+            </p>
+
+            <h1>
+                Weekly Reports
+            </h1>
+
+            <p>
+                Review website, organic search and
+                email performance for each completed
+                reporting week.
+            </p>
+        </div>
+
+        {% if selected_report %}
+            <div class="weekly-period">
+                {{ selected_report.week_start|date:"d M Y" }}
+                –
+                {{ selected_report.week_end|date:"d M Y" }}
+            </div>
+        {% endif %}
+    </div>
+
+    {% if selected_report %}
+
+        <div class="weekly-kpi-grid">
+
+            <div class="weekly-kpi-card">
+                <span>Website Views</span>
+
+                <strong>
+                    {{ selected_report.total_website_views }}
+                </strong>
+
+                {% if website_views_change is not None %}
+                    <small
+                        class="{% if website_views_change >= 0 %}positive{% else %}negative{% endif %}"
+                    >
+                        {% if website_views_change >= 0 %}
+                            +
+                        {% endif %}
+                        {{ website_views_change }}%
+                        vs previous week
+                    </small>
+                {% else %}
+                    <small>
+                        No previous comparison
+                    </small>
+                {% endif %}
+            </div>
+
+            <div class="weekly-kpi-card">
+                <span>Website Sessions</span>
+
+                <strong>
+                    {{ selected_report.total_website_sessions }}
+                </strong>
+
+                {% if website_sessions_change is not None %}
+                    <small
+                        class="{% if website_sessions_change >= 0 %}positive{% else %}negative{% endif %}"
+                    >
+                        {% if website_sessions_change >= 0 %}
+                            +
+                        {% endif %}
+                        {{ website_sessions_change }}%
+                        vs previous week
+                    </small>
+                {% else %}
+                    <small>
+                        No previous comparison
+                    </small>
+                {% endif %}
+            </div>
+
+            <div class="weekly-kpi-card">
+                <span>Search Clicks</span>
+
+                <strong>
+                    {{ selected_report.total_search_clicks }}
+                </strong>
+
+                {% if search_clicks_change is not None %}
+                    <small
+                        class="{% if search_clicks_change >= 0 %}positive{% else %}negative{% endif %}"
+                    >
+                        {% if search_clicks_change >= 0 %}
+                            +
+                        {% endif %}
+                        {{ search_clicks_change }}%
+                        vs previous week
+                    </small>
+                {% else %}
+                    <small>
+                        No previous comparison
+                    </small>
+                {% endif %}
+            </div>
+
+            <div class="weekly-kpi-card">
+                <span>Search Impressions</span>
+
+                <strong>
+                    {{ selected_report.total_search_impressions }}
+                </strong>
+
+                {% if search_impressions_change is not None %}
+                    <small
+                        class="{% if search_impressions_change >= 0 %}positive{% else %}negative{% endif %}"
+                    >
+                        {% if search_impressions_change >= 0 %}
+                            +
+                        {% endif %}
+                        {{ search_impressions_change }}%
+                        vs previous week
+                    </small>
+                {% else %}
+                    <small>
+                        No previous comparison
+                    </small>
+                {% endif %}
+            </div>
+
+            <div class="weekly-kpi-card">
+                <span>Search CTR</span>
+
+                <strong>
+                    {{ search_ctr|floatformat:2 }}%
+                </strong>
+
+                {% if search_ctr_change is not None %}
+                    <small
+                        class="{% if search_ctr_change >= 0 %}positive{% else %}negative{% endif %}"
+                    >
+                        {% if search_ctr_change >= 0 %}
+                            +
+                        {% endif %}
+                        {{ search_ctr_change }}%
+                        vs previous week
+                    </small>
+                {% else %}
+                    <small>
+                        Click-through rate
+                    </small>
+                {% endif %}
+            </div>
+
+            <div class="weekly-kpi-card">
+                <span>Email Opens</span>
+
+                <strong>
+                    {{ selected_report.total_email_opens }}
+                </strong>
+
+                <small>
+                    Average open rate:
+                    {{ selected_report.average_email_open_rate|floatformat:2 }}%
+                </small>
+            </div>
+
+            <div class="weekly-kpi-card">
+                <span>Email Clicks</span>
+
+                <strong>
+                    {{ selected_report.total_email_clicks }}
+                </strong>
+
+                <small>
+                    Average click rate:
+                    {{ selected_report.average_email_click_rate|floatformat:2 }}%
+                </small>
+            </div>
+
+        </div>
+
+        <div class="weekly-content-grid">
+
+            <section class="weekly-panel">
+                <div class="weekly-panel-header">
+                    <div>
+                        <h2>
+                            Recommendations
+                        </h2>
+
+                        <p>
+                            Automatically generated
+                            performance observations.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="weekly-recommendations">
+
+                    {% for recommendation in recommendation_items %}
+                        <div class="weekly-recommendation">
+                            <span>
+                                {{ forloop.counter }}
+                            </span>
+
+                            <p>
+                                {{ recommendation }}
+                            </p>
+                        </div>
+                    {% empty %}
+                        <p class="weekly-empty">
+                            No recommendations are
+                            available.
+                        </p>
+                    {% endfor %}
+
+                </div>
+            </section>
+
+            <section class="weekly-panel">
+                <div class="weekly-panel-header">
+                    <div>
+                        <h2>
+                            Report Details
+                        </h2>
+
+                        <p>
+                            Selected reporting period.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="weekly-details">
+
+                    <div>
+                        <span>Week Start</span>
+                        <strong>
+                            {{ selected_report.week_start|date:"d M Y" }}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Week End</span>
+                        <strong>
+                            {{ selected_report.week_end|date:"d M Y" }}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Created</span>
+                        <strong>
+                            {{ selected_report.created_at|date:"d M Y, H:i" }}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Last Updated</span>
+                        <strong>
+                            {{ selected_report.updated_at|date:"d M Y, H:i" }}
+                        </strong>
+                    </div>
+
+                </div>
+            </section>
+
+        </div>
+
+        <section class="weekly-panel weekly-history-panel">
+
+            <div class="weekly-panel-header">
+                <div>
+                    <h2>
+                        Report History
+                    </h2>
+
+                    <p>
+                        Previously generated weekly
+                        reports.
+                    </p>
+                </div>
+            </div>
+
+            <div class="weekly-table-wrapper">
+                <table class="weekly-table">
+                    <thead>
+                        <tr>
+                            <th>Week</th>
+                            <th>Website Views</th>
+                            <th>Sessions</th>
+                            <th>Search Clicks</th>
+                            <th>Impressions</th>
+                            <th>Email Opens</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for report in report_history %}
+                            <tr>
+                                <td>
+                                    {{ report.week_start|date:"d M Y" }}
+                                    –
+                                    {{ report.week_end|date:"d M Y" }}
+                                </td>
+
+                                <td>
+                                    {{ report.total_website_views }}
+                                </td>
+
+                                <td>
+                                    {{ report.total_website_sessions }}
+                                </td>
+
+                                <td>
+                                    {{ report.total_search_clicks }}
+                                </td>
+
+                                <td>
+                                    {{ report.total_search_impressions }}
+                                </td>
+
+                                <td>
+                                    {{ report.total_email_opens }}
+                                </td>
+
+                                <td>
+                                    <a
+                                        href="?week={{ report.week_start|date:'Y-m-d' }}"
+                                    >
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+        </section>
+
+        <section class="weekly-panel">
+
+            <div class="weekly-panel-header">
+                <div>
+                    <h2>
+                        Generator Status
+                    </h2>
+
+                    <p>
+                        Latest weekly report execution.
+                    </p>
+                </div>
+            </div>
+
+            {% if latest_log %}
+                <div class="weekly-status-grid">
+
+                    <div>
+                        <span>Status</span>
+
+                        <strong
+                            class="weekly-status weekly-status-{{ latest_log.status }}"
+                        >
+                            {{ latest_log.status|title }}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Reports Processed</span>
+
+                        <strong>
+                            {{ latest_log.records_processed }}
+                        </strong>
+                    </div>
+
+                    <div>
+                        <span>Completed</span>
+
+                        <strong>
+                            {% if latest_log.completed_at %}
+                                {{ latest_log.completed_at|date:"d M Y, H:i" }}
+                            {% else %}
+                                In progress
+                            {% endif %}
+                        </strong>
+                    </div>
+
+                </div>
+            {% endif %}
+
+        </section>
+
+    {% else %}
+
+        <section class="weekly-panel">
+            <p class="weekly-empty">
+                No weekly reports exist yet. Run:
+            </p>
+
+            <pre>python manage.py generate_weekly_report</pre>
+        </section>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

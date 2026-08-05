@@ -1,0 +1,651 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Website Analytics | Medvolt
+{% endblock %}
+
+
+{% block content %}
+
+<section class="welcome-section">
+
+    <div>
+        <h2>
+            GA4 Website Performance
+        </h2>
+
+        <p>
+            Page views, sessions, users, engagement
+            and traffic-source performance.
+        </p>
+    </div>
+
+    <div class="dashboard-toolbar">
+
+        {% if start_date and end_date %}
+            <div class="last-updated">
+                {{ start_date|date:"d M Y" }}
+                –
+                {{ end_date|date:"d M Y" }}
+            </div>
+        {% endif %}
+
+        <div class="period-filter">
+
+            <a
+                href="?days=7"
+                class="period-button
+                {% if selected_period == '7' %}
+                    active
+                {% endif %}"
+            >
+                7 Days
+            </a>
+
+            <a
+                href="?days=30"
+                class="period-button
+                {% if selected_period == '30' %}
+                    active
+                {% endif %}"
+            >
+                30 Days
+            </a>
+
+            <a
+                href="?days=90"
+                class="period-button
+                {% if selected_period == '90' %}
+                    active
+                {% endif %}"
+            >
+                90 Days
+            </a>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<section class="kpi-grid">
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+
+            <span class="kpi-label">
+                Page Views
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16 10 10l4 4 6-7"/><path d="M17 7h3v3"/></svg>
+            </span>
+
+        </div>
+
+        <div class="kpi-value">
+            {{ total_views }}
+        </div>
+
+        <div class="kpi-description">
+            Total views during selected period
+        </div>
+
+    </article>
+
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+
+            <span class="kpi-label">
+                Sessions
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-7 5 14 2.5-7H21"/></svg>
+            </span>
+
+        </div>
+
+        <div class="kpi-value">
+            {{ total_sessions }}
+        </div>
+
+        <div class="kpi-description">
+            Website sessions
+        </div>
+
+    </article>
+
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+
+            <span class="kpi-label">
+                Users
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.2"/><path d="M15.7 14.2c1.9.4 3.3 1.9 3.8 4.8"/></svg>
+            </span>
+
+        </div>
+
+        <div class="kpi-value">
+            {{ total_users }}
+        </div>
+
+        <div class="kpi-description">
+            Source-attributed GA4 users
+        </div>
+
+    </article>
+
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+
+            <span class="kpi-label">
+                Avg. Engagement
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+            </span>
+
+        </div>
+
+        <div class="kpi-value">
+            {{ average_engagement }}s
+        </div>
+
+        <div class="kpi-description">
+            Engagement time per session
+        </div>
+
+    </article>
+
+</section>
+
+
+<section class="dashboard-layout">
+
+    <article class="panel panel-wide">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Daily Website Traffic
+                </h3>
+
+                <p>
+                    Views, sessions and users by day
+                </p>
+            </div>
+
+        </div>
+
+        <div class="chart-wrapper">
+            <canvas id="websiteTrafficChart"></canvas>
+        </div>
+
+    </article>
+
+
+    <article class="panel">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Traffic Sources
+                </h3>
+
+                <p>
+                    Views by acquisition source
+                </p>
+            </div>
+
+        </div>
+
+        <div class="chart-wrapper source-chart-wrapper">
+            <canvas id="trafficSourceChart"></canvas>
+        </div>
+
+        {% if top_source %}
+
+            <div class="source-highlight">
+
+                <span>
+                    Top source
+                </span>
+
+                <strong>
+                    {{ top_source.traffic_source }}
+                </strong>
+
+                <small>
+                    {{ top_source.views }} views
+                </small>
+
+            </div>
+
+        {% endif %}
+
+    </article>
+
+</section>
+
+
+<section class="dashboard-layout">
+
+    <article class="panel panel-wide">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Top Pages
+                </h3>
+
+                <p>
+                    Pages receiving the highest views
+                </p>
+            </div>
+
+        </div>
+
+        <div class="chart-wrapper">
+            <canvas id="topPagesChart"></canvas>
+        </div>
+
+    </article>
+
+
+    <article class="panel">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    GA4 Collector Status
+                </h3>
+
+                <p>
+                    Latest database collection
+                </p>
+            </div>
+
+        </div>
+
+        {% if latest_log %}
+
+            <div class="rate-summary">
+
+                <div class="rate-item">
+
+                    <span>Status</span>
+
+                    <strong
+                        class="status-{{ latest_log.status }}"
+                    >
+                        {{ latest_log.status|title }}
+                    </strong>
+
+                </div>
+
+                <div class="rate-item">
+
+                    <span>Records processed</span>
+
+                    <strong>
+                        {{ latest_log.records_processed }}
+                    </strong>
+
+                </div>
+
+                <div class="rate-item">
+
+                    <span>Started</span>
+
+                    <strong>
+                        {{ latest_log.started_at|date:"d M, H:i" }}
+                    </strong>
+
+                </div>
+
+                <div class="rate-item">
+
+                    <span>Completed</span>
+
+                    <strong>
+                        {% if latest_log.completed_at %}
+                            {{ latest_log.completed_at|date:"d M, H:i" }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+
+                </div>
+
+            </div>
+
+            {% if latest_log.error_message %}
+
+                <div class="collector-error">
+                    {{ latest_log.error_message|truncatechars:250 }}
+                </div>
+
+            {% endif %}
+
+        {% else %}
+
+            <div class="empty-state">
+                No GA4 collector logs available.
+            </div>
+
+        {% endif %}
+
+    </article>
+
+</section>
+
+
+<section class="panel">
+
+    <div class="panel-header">
+
+        <div>
+            <h3>
+                Page Performance
+            </h3>
+
+            <p>
+                Aggregated page metrics for the
+                selected period
+            </p>
+        </div>
+
+    </div>
+
+    <div class="table-scroll">
+
+        <table class="dashboard-table">
+
+            <thead>
+
+                <tr>
+                    <th>Page</th>
+                    <th>Views</th>
+                    <th>Sessions</th>
+                    <th>Users</th>
+                    <th>Avg. Engagement</th>
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                {% for page in page_table %}
+
+                    <tr>
+
+                        <td>
+
+                            <strong>
+                                {% if page.page_title %}
+                                    {{ page.page_title }}
+                                {% else %}
+                                    Untitled Page
+                                {% endif %}
+                            </strong>
+
+                            <a
+                                href="{{ page.page_url }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="table-link"
+                            >
+                                {{ page.page_url }}
+                            </a>
+
+                        </td>
+
+                        <td>
+                            {{ page.views }}
+                        </td>
+
+                        <td>
+                            {{ page.sessions }}
+                        </td>
+
+                        <td>
+                            {{ page.users }}
+                        </td>
+
+                        <td>
+                            {{ page.average_engagement }}s
+                        </td>
+
+                    </tr>
+
+                {% empty %}
+
+                    <tr>
+
+                        <td colspan="5">
+
+                            <div class="empty-state">
+                                No GA4 analytics available
+                                for this period.
+                            </div>
+
+                        </td>
+
+                    </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+{% endblock %}
+
+
+{% block extra_js %}
+
+<script>
+    const dailyLabels = {{ daily_labels|safe }};
+    const dailyViews = {{ daily_views|safe }};
+    const dailySessions = {{ daily_sessions|safe }};
+    const dailyUsers = {{ daily_users|safe }};
+
+    const sourceLabels = {{ source_labels|safe }};
+    const sourceViews = {{ source_views|safe }};
+
+    const topPageLabels = {{ top_page_labels|safe }};
+    const topPageViews = {{ top_page_views|safe }};
+
+    const colors = window.MEDVOLT_CHART_COLORS || {
+        green: "#1baf7a",
+        blue: "#2a78d6",
+        orange: "#eb6834"
+    };
+
+
+    const websiteTrafficCanvas = document.getElementById(
+        "websiteTrafficChart"
+    );
+
+    if (websiteTrafficCanvas) {
+        new Chart(websiteTrafficCanvas, {
+            type: "line",
+
+            data: {
+                labels: dailyLabels,
+
+                datasets: [
+                    {
+                        label: "Views",
+                        data: dailyViews,
+                        borderColor: colors.green,
+                        pointBackgroundColor: colors.green,
+                        borderWidth: 2,
+                        tension: 0.35,
+                        pointRadius: 2
+                    },
+                    {
+                        label: "Sessions",
+                        data: dailySessions,
+                        borderColor: colors.blue,
+                        pointBackgroundColor: colors.blue,
+                        borderWidth: 2,
+                        tension: 0.35,
+                        pointRadius: 2
+                    },
+                    {
+                        label: "Users",
+                        data: dailyUsers,
+                        borderColor: colors.orange,
+                        pointBackgroundColor: colors.orange,
+                        borderWidth: 2,
+                        tension: 0.35,
+                        pointRadius: 2
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                interaction: {
+                    mode: "index",
+                    intersect: false
+                },
+
+                plugins: {
+                    legend: {
+                        position: "bottom"
+                    }
+                },
+
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+
+    const trafficSourceCanvas = document.getElementById(
+        "trafficSourceChart"
+    );
+
+    if (trafficSourceCanvas) {
+        // Cap at 3 named slices + "Other" — a doughnut shows every slice at
+        // once, and only the first 3 palette slots are validated as
+        // pairwise distinguishable together (see the dataviz color-formula).
+        const sourcePalette = [colors.green, colors.blue, colors.orange];
+        let sliceLabels = sourceLabels;
+        let sliceValues = sourceViews;
+        let sliceColors = sourcePalette;
+
+        if (sourceLabels.length > 3) {
+            const otherTotal = sourceViews
+                .slice(3)
+                .reduce((sum, value) => sum + value, 0);
+
+            sliceLabels = sourceLabels.slice(0, 3).concat(["Other"]);
+            sliceValues = sourceViews.slice(0, 3).concat([otherTotal]);
+            sliceColors = sourcePalette.concat(["#c3c2b7"]);
+        }
+
+        new Chart(trafficSourceCanvas, {
+            type: "doughnut",
+
+            data: {
+                labels: sliceLabels,
+
+                datasets: [
+                    {
+                        data: sliceValues,
+                        backgroundColor: sliceColors,
+                        borderColor: "#ffffff",
+                        borderWidth: 2
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                plugins: {
+                    legend: {
+                        position: "bottom"
+                    }
+                }
+            }
+        });
+    }
+
+
+    const topPagesCanvas = document.getElementById(
+        "topPagesChart"
+    );
+
+    if (topPagesCanvas) {
+        new Chart(topPagesCanvas, {
+            type: "bar",
+
+            data: {
+                labels: topPageLabels,
+
+                datasets: [
+                    {
+                        label: "Views",
+                        data: topPageViews,
+                        backgroundColor: colors.green,
+                        borderColor: colors.green,
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }
+                ]
+            },
+
+            options: {
+                indexAxis: "y",
+                responsive: true,
+                maintainAspectRatio: false,
+
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+
+                scales: {
+                    x: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+</script>
+
+{% endblock %}

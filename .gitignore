@@ -1,0 +1,68 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.production
+.claude/
+
+# Google credentials
+credentials/
+google_credentials.json
+service_account.json
+service-account.json
+*.pem
+*.key
+
+# SQLite database
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+
+# Analytics backups
+analytics_backup.json
+users_backup.json
+backup*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packages
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Django generated files
+staticfiles/
+media/
+*.log
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Windows and macOS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+~$*

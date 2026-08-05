@@ -1,0 +1,473 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Overview | Medvolt Analytics
+{% endblock %}
+
+
+{% block content %}
+
+<section class="welcome-section">
+
+    <div>
+        <h2>
+            Analytics Overview
+        </h2>
+
+        <p>
+            A combined view of website, search,
+            newsletter and system performance.
+        </p>
+    </div>
+
+    {% if latest_snapshot %}
+        <div class="last-updated">
+            MailerLite updated
+            {{ latest_snapshot|date:"d M Y" }}
+        </div>
+    {% endif %}
+
+</section>
+
+
+<section class="kpi-grid">
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+            <span class="kpi-label">
+                Website Views
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16 10 10l4 4 6-7"/><path d="M17 7h3v3"/></svg>
+            </span>
+        </div>
+
+        <div class="kpi-value">
+            {{ website_views }}
+        </div>
+
+        <div class="kpi-description">
+            Total tracked website views
+        </div>
+
+    </article>
+
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+            <span class="kpi-label">
+                Website Sessions
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-7 5 14 2.5-7H21"/></svg>
+            </span>
+        </div>
+
+        <div class="kpi-value">
+            {{ website_sessions }}
+        </div>
+
+        <div class="kpi-description">
+            Total visitor sessions
+        </div>
+
+    </article>
+
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+            <span class="kpi-label">
+                Search Clicks
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>
+            </span>
+        </div>
+
+        <div class="kpi-value">
+            {{ search_clicks }}
+        </div>
+
+        <div class="kpi-description">
+            Google Search Console clicks
+        </div>
+
+    </article>
+
+
+    <article class="kpi-card">
+
+        <div class="kpi-card-top">
+            <span class="kpi-label">
+                Newsletter Opens
+            </span>
+
+            <span class="kpi-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+            </span>
+        </div>
+
+        <div class="kpi-value">
+            {{ newsletter_opens }}
+        </div>
+
+        <div class="kpi-description">
+            Latest MailerLite campaign snapshot
+        </div>
+
+    </article>
+
+</section>
+
+
+<section class="dashboard-layout">
+
+    <article class="panel panel-wide">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Channel Performance
+                </h3>
+
+                <p>
+                    Current totals across connected platforms
+                </p>
+            </div>
+
+        </div>
+
+        <div class="channel-list">
+
+            <div class="channel-row">
+
+                <div>
+                    <strong>Website</strong>
+                    <span>GA4 page performance</span>
+                </div>
+
+                <div class="channel-number">
+                    {{ website_views }}
+                </div>
+
+            </div>
+
+
+            <div class="channel-row">
+
+                <div>
+                    <strong>Google Search</strong>
+                    <span>Organic search clicks</span>
+                </div>
+
+                <div class="channel-number">
+                    {{ search_clicks }}
+                </div>
+
+            </div>
+
+
+            <div class="channel-row">
+
+                <div>
+                    <strong>MailerLite</strong>
+                    <span>Unique campaign opens</span>
+                </div>
+
+                <div class="channel-number">
+                    {{ newsletter_opens }}
+                </div>
+
+            </div>
+
+        </div>
+
+    </article>
+
+
+    <article class="panel">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Newsletter Rates
+                </h3>
+
+                <p>
+                    Latest campaign averages
+                </p>
+            </div>
+
+        </div>
+
+        <div class="rate-summary">
+
+            <div class="rate-item">
+
+                <span>
+                    Average Open Rate
+                </span>
+
+                <strong>
+                    {{ average_open_rate }}%
+                </strong>
+
+            </div>
+
+            <div class="rate-item">
+
+                <span>
+                    Average Click Rate
+                </span>
+
+                <strong>
+                    {{ average_click_rate }}%
+                </strong>
+
+            </div>
+
+            <div class="rate-item">
+
+                <span>
+                    Newsletter Clicks
+                </span>
+
+                <strong>
+                    {{ newsletter_clicks }}
+                </strong>
+
+            </div>
+
+        </div>
+
+    </article>
+
+</section>
+
+
+<section class="panel">
+
+    <div class="panel-header">
+
+        <div>
+            <h3>
+                Recent System Activity
+            </h3>
+
+            <p>
+                Collector and automation execution status
+            </p>
+        </div>
+
+    </div>
+
+    <div class="system-log-list">
+
+        {% for log in recent_logs %}
+
+            <div class="system-log-row">
+
+                <div>
+
+                    <strong>
+                        {{ log.module }}
+                    </strong>
+
+                    <span>
+                        {{ log.started_at|date:"d M Y, H:i" }}
+                    </span>
+
+                </div>
+
+                <div class="log-status {{ log.status }}">
+                    {{ log.status|title }}
+                </div>
+
+            </div>
+
+        {% empty %}
+
+            <div class="empty-state">
+                No system logs available yet.
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+</section>
+
+<section class="sc-panel">
+
+    <div class="sc-panel-header">
+        <div>
+            <p class="sc-eyebrow">
+                ORGANIC SEARCH
+            </p>
+
+            <h2>
+                Search Console Overview
+            </h2>
+
+            <p>
+                Google search performance for the
+                latest 30 days.
+            </p>
+        </div>
+
+        <a
+            href="{% url 'dashboard:search_console' %}"
+            class="overview-section-link"
+        >
+            View full report
+        </a>
+    </div>
+
+    <div class="sc-date-row">
+        <span>
+            {{ overview_search_start_date|date:"d M Y" }}
+            –
+            {{ overview_search_end_date|date:"d M Y" }}
+        </span>
+
+        {% if overview_search_latest_date %}
+            <span>
+                Latest data:
+                {{ overview_search_latest_date|date:"d M Y" }}
+            </span>
+        {% endif %}
+    </div>
+
+    <div class="sc-kpi-grid">
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Search Clicks
+            </span>
+
+            <strong>
+                {{ overview_search_clicks|default:0 }}
+            </strong>
+
+            <span class="sc-kpi-note">
+                Visits from Google Search
+            </span>
+        </div>
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Impressions
+            </span>
+
+            <strong>
+                {{ overview_search_impressions|default:0 }}
+            </strong>
+
+            <span class="sc-kpi-note">
+                Search result appearances
+            </span>
+        </div>
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Search CTR
+            </span>
+
+            <strong>
+                {{ overview_search_ctr|floatformat:2 }}%
+            </strong>
+
+            <span class="sc-kpi-note">
+                Organic click-through rate
+            </span>
+        </div>
+
+        <div class="sc-kpi-card">
+            <span class="sc-kpi-label">
+                Average Position
+            </span>
+
+            <strong>
+                {{ overview_search_position|floatformat:2 }}
+            </strong>
+
+            <span class="sc-kpi-note">
+                Weighted Google ranking
+            </span>
+        </div>
+
+    </div>
+
+    <div class="overview-search-queries">
+
+        <div class="sc-panel-header">
+            <div>
+                <h2>
+                    Top Search Queries
+                </h2>
+
+                <p>
+                    Queries generating the most
+                    organic clicks.
+                </p>
+            </div>
+        </div>
+
+        <div class="sc-table-wrapper">
+            <table class="sc-table">
+                <thead>
+                    <tr>
+                        <th>Query</th>
+                        <th>Clicks</th>
+                        <th>Impressions</th>
+                        <th>CTR</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for query in overview_top_queries %}
+                        <tr>
+                            <td class="sc-query-cell">
+                                {{ query.query }}
+                            </td>
+
+                            <td>
+                                {{ query.clicks }}
+                            </td>
+
+                            <td>
+                                {{ query.impressions }}
+                            </td>
+
+                            <td>
+                                {{ query.ctr|floatformat:2 }}%
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td
+                                colspan="4"
+                                class="sc-empty"
+                            >
+                                No Search Console data
+                                is available.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+</section>
+
+{% endblock %}
