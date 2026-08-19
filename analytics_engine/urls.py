@@ -9,6 +9,12 @@ app_name = "dashboard"
 
 urlpatterns = [
     path(
+        "healthz/",
+        views.healthz,
+        name="healthz",
+    ),
+
+    path(
         "login/",
         auth_views.LoginView.as_view(
             template_name="registration/login.html",

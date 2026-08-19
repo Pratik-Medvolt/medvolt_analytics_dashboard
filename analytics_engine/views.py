@@ -11,8 +11,14 @@ from django.db.models import (
     Max,
     Sum,
 )
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
+
+
+def healthz(request):
+    """Unauthenticated liveness endpoint for Docker/monitoring health checks."""
+    return HttpResponse("ok", content_type="text/plain")
 
 from analytics_engine.models import (
     MailerLiteAnalytics,
