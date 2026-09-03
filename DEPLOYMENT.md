@@ -35,13 +35,24 @@ cp .env.example .env
 
 | Variable | Purpose |
 |---|---|
-| `SECRET_KEY` | Django secret key. Generate a long random value for production. |
+| `SECRET_KEY` | Django secret key. **Required** when `DEBUG=False` — the app refuses to start without it. Generate with `python3 -c 'import secrets; print(secrets.token_urlsafe(64))'`. |
 | `DEBUG` | Must be `False` in production. |
-| `ALLOWED_HOSTS` | Comma-separated list of hostnames the app will answer to. |
-| `CSRF_TRUSTED_ORIGINS` | Comma-separated list of scheme+host origins allowed to POST (e.g. `https://your-domain.com`). |
-| `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` | Keep `True` once served over HTTPS. |
-| `SECURE_SSL_REDIRECT` | Set `True` only after HTTPS is actually configured in front of Nginx. |
+| `ALLOWED_HOSTS` | Comma-separated hostnames the app answers to. Required when `DEBUG=False`. |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated scheme+host origins allowed to POST. Must be `https://` once `USE_HTTPS=True`; leave empty until then. |
+| `USE_HTTPS` | **The single TLS switch.** Controls `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` and `SECURE_SSL_REDIRECT` together. Keep `False` until a certificate is actually in front of the app — see the warning below. |
+| `SECURE_HSTS_SECONDS` | Opt-in HSTS, `0` by default. Set (e.g. `31536000`) only once HTTPS is proven working. |
+| `NGINX_BIND` / `NGINX_PORT` | Where the Nginx container publishes. Defaults to `0.0.0.0:80`. Set to `127.0.0.1` / `8080` when a host proxy terminates TLS in front of it. |
 | `DJANGO_DB_PATH` | SQLite file path. Docker Compose points this at the persistent volume; leave unset for local non-Docker runs. |
+| `SQLITE_TIMEOUT` | Seconds a query waits for a competing writer before failing. Defaults to `20`. |
+
+> **Do not set `USE_HTTPS=True` before TLS is working.** Browsers refuse
+> to store a `Secure` cookie over `http://`, so the site loads, the health
+> check passes, and nobody can get past the login form. The individual
+> `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` / `SECURE_SSL_REDIRECT`
+> variables still exist as per-setting overrides, but `USE_HTTPS` is what
+> you should normally change. Settings will refuse to start on the one
+> combination that is always wrong (Secure cookies plus an `http://`
+> trusted origin).
 | `GOOGLE_CREDENTIALS_FILE`, `GOOGLE_SHEET_NAME` | Google service-account credentials/sheet used by the analytics collectors. |
 | `GA4_PROPERTY_ID`, `GA4_LOOKBACK_DAYS`, `WEBSITE_BASE_URL` | GA4 collector config. |
 | `SEARCH_CONSOLE_SITE_URL`, `SEARCH_CONSOLE_LOOKBACK_DAYS`, `SEARCH_CONSOLE_END_LAG_DAYS`, `SEARCH_CONSOLE_ROW_LIMIT` | Search Console collector config. |
@@ -50,8 +61,14 @@ cp .env.example .env
 
 **Google credentials file**: `google_credentials.json` is a secret and is
 not baked into the Docker image or committed to git. Place the real file
-next to `docker-compose.yml` on the host before running `docker compose up`
-— it is bind-mounted read-only into the container.
+next to `docker-compose.yml` on the host **before** running
+`docker compose up` — it is bind-mounted read-only into the container.
+
+The mount is declared with `create_host_path: false`, so a missing file
+fails the start with a clear message naming the path. (Without that,
+Docker silently creates a *directory* called `google_credentials.json`
+and every Google collector then fails with a confusing read error that
+persists until you delete it.)
 
 The `web` container runs as a non-root user, so the file must be
 readable by it. After copying it onto the host, run:
@@ -141,10 +158,18 @@ app today — they're one-off/scheduled jobs. Keep that as-is (no Celery
 or Redis was introduced) and schedule them with the host's crontab,
 running them *inside* the running `web` container:
 
+Cron runs with a minimal `PATH` and no shell profile, so use the
+absolute path to `docker` and an explicit `--project-directory` rather
+than relying on `cd` plus a bare `docker compose`:
+
 ```
 # crontab -e on the VM
-0 6 * * * cd /opt/medvolt && docker compose exec -T web python manage.py collect_all >> /var/log/medvolt-collect.log 2>&1
+30 5 * * * /usr/bin/docker compose --project-directory /opt/medvolt exec -T web python manage.py collect_all >> /var/log/medvolt-collect.log 2>&1
 ```
+
+The command exits non-zero if any individual collector failed, while
+still committing the data the other collectors returned, so a non-zero
+exit in the log means "check this one", not "nothing ran".
 
 ## K. Basic production deployment on a fresh Ubuntu VM
 
@@ -175,27 +200,89 @@ docker compose up -d
 docker compose exec web python manage.py createsuperuser
 ```
 
-At this point the app is reachable on port 80. For a real domain with
-HTTPS, either:
-- Put a TLS-terminating reverse proxy (e.g. Caddy, or Nginx run
-  directly on the host with certbot) in front of the `nginx` container
-  and change its port mapping to a non-public port, or
-- Add a certbot/Let's Encrypt setup to the `nginx` service.
+At this point the app is reachable over plain HTTP on port 80, and you
+should be able to log in. Verify that before adding TLS — debugging one
+layer at a time is much faster than two.
 
-Either approach is a small addition on top of this setup; it wasn't
-included by default to keep the base configuration minimal and because
-domain/TLS decisions are environment-specific.
+Security group on the instance: SSH from your address only, plus 80 and
+443. Gunicorn stays on the Docker network and is never published.
+
+## K2. Adding HTTPS
+
+Certbot on the host is the least invasive option: it owns 443, and the
+Nginx container moves off the public port. Nothing in the application
+changes — `SECURE_PROXY_SSL_HEADER` is already configured and the
+container's Nginx already sets `X-Forwarded-Proto`.
+
+```bash
+# 1. Move the container off the public port
+#    in .env:
+#      NGINX_BIND=127.0.0.1
+#      NGINX_PORT=8080
+docker compose up -d
+
+# 2. Host Nginx + certbot, proxying 443 -> 127.0.0.1:8080
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+sudo certbot --nginx -d analytics.your-domain.com
+
+# 3. ONLY NOW turn on the TLS settings — in .env:
+#      USE_HTTPS=True
+#      CSRF_TRUSTED_ORIGINS=https://analytics.your-domain.com
+docker compose up -d
+
+# 4. Confirm
+docker compose exec web python manage.py check --deploy
+```
+
+`check --deploy` should report no cookie or SSL-redirect warnings at
+this point. The only remaining one is HSTS, which is deliberately
+opt-in — set `SECURE_HSTS_SECONDS=31536000` once you are confident the
+certificate renewal works.
+
+Then log in again over HTTPS. The container health check keeps working
+through the redirect because `/healthz/` is exempt from
+`SECURE_SSL_REDIRECT` — it is reached directly on the container's
+loopback interface and carries no forwarded-proto header, so without
+that exemption it would receive a 301, fail, and stop Nginx from
+starting.
+
+## K3. Surviving a reboot
+
+`restart: unless-stopped` only helps if the Docker daemon itself starts
+at boot:
+
+```bash
+sudo systemctl enable --now docker
+sudo reboot   # then re-check the dashboard
+```
 
 ## L. Backup considerations
 
 The database is a single SQLite file inside the `sqlite_data` Docker
 volume. Back it up regularly, e.g. via a host cron job:
 
+Use the `backup_db` management command. It takes a consistent snapshot
+through SQLite's online backup API (a plain file copy of a database that
+is being written to can be corrupt) and prunes old snapshots. It needs no
+`sqlite3` CLI, which the slim base image does not ship — the previously
+documented `sqlite3 .backup` cron line could never have run.
+
 ```bash
 # crontab -e on the VM
-0 3 * * * docker compose -f /opt/medvolt/docker-compose.yml exec -T web sh -c \
-  "sqlite3 /app/data/db.sqlite3 '.backup /app/data/backup-$(date +\%F).sqlite3'"
+0 3 * * * /usr/bin/docker compose --project-directory /opt/medvolt exec -T web python manage.py backup_db --retain-days 14 >> /var/log/medvolt-backup.log 2>&1
 ```
+
+Snapshots land in `/app/data/backups/` inside the `sqlite_data` volume.
+Verify one by hand after the first run:
+
+```bash
+docker compose exec web python manage.py backup_db
+docker compose exec web ls -la /app/data/backups/
+```
+
+To restore: stop the `web` container, copy the chosen snapshot over
+`/app/data/db.sqlite3` inside the volume, and start it again. Rehearse
+this once on the fresh install, while there is nothing to lose.
 
 Also back up:
 - `google_credentials.json` (kept outside git; store it in your secrets manager).

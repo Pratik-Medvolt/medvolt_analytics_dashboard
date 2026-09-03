@@ -6,10 +6,20 @@ services:
     volumes:
       - sqlite_data:/app/data
       - static_volume:/app/staticfiles
-      - ./google_credentials.json:/app/google_credentials.json:ro
+      - type: bind
+        source: ./google_credentials.json
+        target: /app/google_credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
     expose:
       - "8000"
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=3)"]
       interval: 30s
@@ -20,7 +30,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - "80:80"
+      - "${NGINX_BIND:-0.0.0.0}:${NGINX_PORT:-80}:80"
     volumes:
       - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - static_volume:/app/staticfiles:ro
@@ -28,6 +38,11 @@ services:
       web:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   sqlite_data:

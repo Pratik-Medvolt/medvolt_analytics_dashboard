@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 
 from decouple import Csv, config
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,20 +22,40 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config(
-    "SECRET_KEY",
-    default="django-insecure-sg6vn^-b07i*@y)h-wkfv-i9_!(c$$#c2y2ngs7vtx--1#6u*$",
-)
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DEBUG", default=True, cast=bool)
 
+# SECURITY WARNING: keep the secret key used in production secret!
+DEV_SECRET_KEY = "django-insecure-local-development-key-do-not-use-in-production"
+
+SECRET_KEY = config("SECRET_KEY", default="")
+
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = DEV_SECRET_KEY
+    else:
+        raise ImproperlyConfigured(
+            "SECRET_KEY must be set when DEBUG=False. Generate one with: "
+            "python3 -c 'import secrets; print(secrets.token_urlsafe(64))'"
+        )
+
+if not DEBUG and SECRET_KEY == DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        "SECRET_KEY is still the development placeholder. Set a real "
+        "random value in .env before running with DEBUG=False."
+    )
+
 ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1,.trycloudflare.com",
+    default="localhost,127.0.0.1",
     cast=Csv(),
 )
+
+if not DEBUG and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        "ALLOWED_HOSTS must list the hostnames this deployment answers to "
+        "when DEBUG=False."
+    )
 
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
@@ -98,6 +119,9 @@ DATABASES = {
             "DJANGO_DB_PATH",
             default=str(BASE_DIR / 'db.sqlite3'),
         ),
+        'OPTIONS': {
+            'timeout': config("SQLITE_TIMEOUT", default=20, cast=int),
+        },
     }
 }
 
@@ -165,15 +189,42 @@ LOGIN_REDIRECT_URL = "dashboard:overview"
 LOGOUT_REDIRECT_URL = "dashboard:login"
 
 
-# Security settings that only make sense once TLS is terminated in front
-# of the app (e.g. by Nginx in the Docker Compose setup). Left off by
-# default so local HTTP development is unaffected.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+USE_HTTPS = config("USE_HTTPS", default=False, cast=bool)
+
 if not DEBUG:
-    SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=True, cast=bool)
-    CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=True, cast=bool)
-    SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)
+    SESSION_COOKIE_SECURE = config(
+        "SESSION_COOKIE_SECURE", default=USE_HTTPS, cast=bool
+    )
+    CSRF_COOKIE_SECURE = config(
+        "CSRF_COOKIE_SECURE", default=USE_HTTPS, cast=bool
+    )
+    SECURE_SSL_REDIRECT = config(
+        "SECURE_SSL_REDIRECT", default=USE_HTTPS, cast=bool
+    )
+
+    SECURE_REDIRECT_EXEMPT = [r"^healthz/$"]
+
+    SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0, cast=int)
+
+    if SECURE_HSTS_SECONDS:
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
+            "SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True, cast=bool
+        )
+        SECURE_HSTS_PRELOAD = config(
+            "SECURE_HSTS_PRELOAD", default=False, cast=bool
+        )
+
+    if SESSION_COOKIE_SECURE and any(
+        origin.startswith("http://") for origin in CSRF_TRUSTED_ORIGINS
+    ):
+        raise ImproperlyConfigured(
+            "CSRF_TRUSTED_ORIGINS contains an http:// origin while the "
+            "session cookie is marked Secure - login will silently fail. "
+            "Either serve the site over HTTPS and use https:// origins, "
+            "or set USE_HTTPS=False until a certificate is in place."
+        )
 
 
 LOGGING = {

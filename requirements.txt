@@ -1,9 +1,22 @@
+# Web framework and serving
 Django==4.2.16
 python-decouple==3.8
+whitenoise==6.12.0
+gunicorn==21.2.0
+
+# HTTP client used by the MailerLite and content-discovery collectors
+requests==2.34.2
+
+# Google APIs: GA4 Data API, Search Console, and service-account auth
 google-analytics-data==0.23.0
 google-api-python-client==2.149.0
 google-auth==2.56.0
 google-auth-httplib2==0.4.0
-requests==2.34.2
-whitenoise==6.12.0
-gunicorn==21.2.0
+
+# Google Sheets export path (analytics_engine/sheets/, run_*.py scripts)
+gspread==6.2.1
+google-auth-oauthlib==1.4.1
+
+# Content discovery: sitemap HTML parsing and Substack RSS
+beautifulsoup4==4.15.0
+feedparser==6.0.14
