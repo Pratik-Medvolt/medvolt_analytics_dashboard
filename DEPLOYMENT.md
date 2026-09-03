@@ -207,44 +207,57 @@ layer at a time is much faster than two.
 Security group on the instance: SSH from your address only, plus 80 and
 443. Gunicorn stays on the Docker network and is never published.
 
-## K2. Adding HTTPS
+## K2. Routing and TLS (Traefik)
 
-Certbot on the host is the least invasive option: it owns 443, and the
-Nginx container moves off the public port. Nothing in the application
-changes — `SECURE_PROXY_SSL_HEADER` is already configured and the
-container's Nginx already sets `X-Forwarded-Proto`.
+This stack publishes **no host port**. The instance already runs Traefik
+v3.6, which owns `:80` and `:443` and terminates TLS with its own
+Let's Encrypt resolver. Traefik reaches this stack over the shared
+external Docker network `web`, exactly as the Dify and n8n stacks do.
+
+Only the `nginx` container joins `web`; Gunicorn stays on the project's
+private network and is never reachable from outside the stack.
+
+Routing is declared with labels on the `nginx` service and driven by
+`DASHBOARD_HOST` in `.env`:
+
+| Label | Value |
+|---|---|
+| `traefik.enable` | `true` (Traefik runs with `exposedbydefault=false`) |
+| `traefik.docker.network` | `web` |
+| `traefik.http.routers.medvolt.entrypoints` | `websecure` |
+| `traefik.http.routers.medvolt.rule` | ``Host(`${DASHBOARD_HOST}`)`` |
+| `traefik.http.routers.medvolt.tls.certresolver` | `letsencrypt` |
+| `traefik.http.services.medvolt.loadbalancer.server.port` | `80` |
+
+`DASHBOARD_HOST` is required — `docker compose up` refuses to start
+without it rather than registering a router with an empty rule.
+
+**Before the first start**, the DNS A record for `DASHBOARD_HOST` must
+already point at this instance. Traefik uses the HTTP-01 challenge, so
+without working DNS no certificate is issued and the route serves a
+TLS error.
+
+Because Traefik terminates TLS, `.env` should carry `USE_HTTPS=True` and
+an `https://` `CSRF_TRUSTED_ORIGINS`. Traefik forwards
+`X-Forwarded-Proto: https`, and this stack's Nginx preserves that value
+rather than overwriting it with its own scheme — without that, Django
+would see an insecure request and `SECURE_SSL_REDIRECT` would produce an
+infinite redirect.
+
+The container health check sends a `Host` header taken from
+`DASHBOARD_HOST` (falling back to the first entry of `ALLOWED_HOSTS`).
+It connects on loopback, so a bare request would arrive as
+`Host: 127.0.0.1` and be rejected by `ALLOWED_HOSTS`, leaving `web`
+permanently unhealthy and stopping Nginx from starting.
+
+To verify routing without a browser, from any container on the `web`
+network:
 
 ```bash
-# 1. Move the container off the public port
-#    in .env:
-#      NGINX_BIND=127.0.0.1
-#      NGINX_PORT=8080
-docker compose up -d
-
-# 2. Host Nginx + certbot, proxying 443 -> 127.0.0.1:8080
-sudo apt-get install -y nginx certbot python3-certbot-nginx
-sudo certbot --nginx -d analytics.your-domain.com
-
-# 3. ONLY NOW turn on the TLS settings — in .env:
-#      USE_HTTPS=True
-#      CSRF_TRUSTED_ORIGINS=https://analytics.your-domain.com
-docker compose up -d
-
-# 4. Confirm
-docker compose exec web python manage.py check --deploy
+docker run --rm --network web curlimages/curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Host: analytics.medvolt.ai" -H "X-Forwarded-Proto: https" \
+  http://medvolt-nginx-1/login/
 ```
-
-`check --deploy` should report no cookie or SSL-redirect warnings at
-this point. The only remaining one is HSTS, which is deliberately
-opt-in — set `SECURE_HSTS_SECONDS=31536000` once you are confident the
-certificate renewal works.
-
-Then log in again over HTTPS. The container health check keeps working
-through the redirect because `/healthz/` is exempt from
-`SECURE_SSL_REDIRECT` — it is reached directly on the container's
-loopback interface and carries no forwarded-proto header, so without
-that exemption it would receive a 301, fail, and stop Nginx from
-starting.
 
 ## K3. Surviving a reboot
 

@@ -23,7 +23,7 @@ USER app
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=3)" || exit 1
+    CMD python -c "import os,urllib.request as u; h=(os.environ.get('DASHBOARD_HOST') or os.environ.get('ALLOWED_HOSTS','localhost')).split(',')[0].strip(); u.urlopen(u.Request('http://127.0.0.1:8000/healthz/',headers={'Host':h}),timeout=3)" || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["gunicorn", "medvolt_analytics.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]
