@@ -1,40 +1,44 @@
-from datetime import datetime, timedelta
-from pathlib import Path
-from urllib.parse import urljoin, urlparse
+"""
+Collect GA4 reports into the database.
+
+Each logical report (see ga4_reports.py) is stored separately:
+
+- GA4DailyMetric: one row per property + date (upserted).
+- GA4Report + GA4ReportRow: one report per property + report type +
+  exact date range. Re-collecting a range replaces its rows, so repeated
+  runs are idempotent and never accumulate duplicates.
+
+Sessions and users are non-additive across page, source and date
+dimensions. Never sum report rows to produce site totals - read the
+"summary" report for the same range instead.
+"""
+
+from datetime import timedelta
+from urllib.parse import urljoin
 
 from decouple import config
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from google.analytics.data_v1beta import (
-    BetaAnalyticsDataClient,
-)
-from google.analytics.data_v1beta.types import (
-    DateRange,
-    Dimension,
-    Metric,
-    RunReportRequest,
-)
-from google.oauth2.service_account import Credentials
 
+from analytics_engine.collectors import ga4_reports
+from analytics_engine.collectors.ga4_reports import (
+    GA4_PROPERTY_ID,
+    RANGE_REPORT_FETCHERS,
+    create_ga4_client,
+    fetch_ga4_daily_metrics,
+    get_property_today,
+    preset_range,
+)
 from analytics_engine.models import (
+    GA4DailyMetric,
+    GA4Report,
+    GA4ReportRow,
     SystemLog,
-    WebsiteAnalytics,
 )
 from analytics_engine.services.content_registry import (
     get_or_create_website_content,
 )
 
-
-GA4_PROPERTY_ID = config(
-    "GA4_PROPERTY_ID",
-    default="",
-).strip()
-
-GOOGLE_CREDENTIALS_FILE = config(
-    "GOOGLE_CREDENTIALS_FILE",
-    default="google_credentials.json",
-).strip()
 
 WEBSITE_BASE_URL = config(
     "WEBSITE_BASE_URL",
@@ -47,323 +51,274 @@ GA4_LOOKBACK_DAYS = config(
     cast=int,
 )
 
-SCOPES = [
-    "https://www.googleapis.com/auth/analytics.readonly",
-]
+# Dashboard presets, matching GA4 "Last N days".
+PRESET_PERIODS = {
+    "last_7_days": 7,
+    "last_30_days": 30,
+    "last_90_days": 90,
+}
 
+# GA4 keeps processing recent data for up to ~48h, so previously
+# collected custom ranges ending this recently are refreshed on every run.
+RECENT_RANGE_REFRESH_DAYS = 3
 
-def clean_int(value):
-    try:
-        return int(float(value or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
-def clean_float(value):
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def normalize_page_path(value):
-    """
-    Convert a GA4 page path into a stable path.
-    """
-
-    if not value:
-        return "/"
-
-    parsed = urlparse(
-        str(value).strip()
-    )
-
-    path = parsed.path or "/"
-
-    if path != "/":
-        path = path.rstrip("/")
-
-    return path.lower()
+METRIC_FIELD_NAMES = list(ga4_reports.METRIC_FIELDS.values())
 
 
 def build_page_url(page_path):
-    """
-    Convert a page path into a full website URL.
-    """
+    """Convert a GA4 page path into a full website URL."""
 
-    normalized_path = normalize_page_path(
-        page_path
-    )
-
-    if normalized_path == "/":
+    if not page_path or page_path == "/":
         return f"{WEBSITE_BASE_URL}/"
 
     return urljoin(
         f"{WEBSITE_BASE_URL}/",
-        normalized_path.lstrip("/"),
+        page_path.lstrip("/"),
     )
 
 
-def resolve_credentials_path():
-    credentials_path = Path(
-        GOOGLE_CREDENTIALS_FILE
-    )
-
-    if not credentials_path.is_absolute():
-        credentials_path = (
-            Path(settings.BASE_DIR)
-            / credentials_path
-        )
-
-    if not credentials_path.exists():
-        raise FileNotFoundError(
-            "Google credentials file not found: "
-            f"{credentials_path}"
-        )
-
-    return credentials_path
-
-
-def create_ga4_client():
-    if not GA4_PROPERTY_ID:
-        raise ValueError(
-            "GA4_PROPERTY_ID is missing from .env"
-        )
-
-    credentials = (
-        Credentials.from_service_account_file(
-            str(resolve_credentials_path()),
-            scopes=SCOPES,
-        )
-    )
-
-    return BetaAnalyticsDataClient(
-        credentials=credentials
-    )
-
-
-def parse_ga4_date(value):
-    return datetime.strptime(
-        value,
-        "%Y%m%d",
-    ).date()
-
-
-def fetch_ga4_report_rows(
-    client,
-    start_date,
-    end_date,
-):
-    """
-    Fetch daily GA4 page and source analytics.
-    """
-
-    request = RunReportRequest(
-        property=(
-            f"properties/{GA4_PROPERTY_ID}"
-        ),
-        dimensions=[
-            Dimension(name="date"),
-            Dimension(name="pagePath"),
-            Dimension(name="pageTitle"),
-            Dimension(name="sessionSource"),
-        ],
-        metrics=[
-            Metric(name="screenPageViews"),
-            Metric(name="sessions"),
-            Metric(name="totalUsers"),
-            Metric(
-                name="userEngagementDuration"
-            ),
-        ],
-        date_ranges=[
-            DateRange(
-                start_date=str(start_date),
-                end_date=str(end_date),
-            )
-        ],
-        limit=100000,
-    )
-
-    response = client.run_report(
-        request
-    )
-
-    return list(response.rows)
-
-
-def extract_ga4_values(row):
-    metric_date = parse_ga4_date(
-        row.dimension_values[0].value
-    )
-
-    page_path = normalize_page_path(
-        row.dimension_values[1].value
-    )
-
-    page_title = (
-        row.dimension_values[2].value
-        or page_path
-    ).strip()
-
-    traffic_source = (
-        row.dimension_values[3].value
-        or "(not set)"
-    ).strip()
-
+def metric_values(row):
     return {
-        "metric_date": metric_date,
-        "page_path": page_path,
-        "page_url": build_page_url(
-            page_path
-        ),
-        "page_title": page_title,
-        "traffic_source": traffic_source,
-        "views": clean_int(
-            row.metric_values[0].value
-        ),
-        "sessions": clean_int(
-            row.metric_values[1].value
-        ),
-        "users": clean_int(
-            row.metric_values[2].value
-        ),
-        "engagement_time_seconds": (
-            clean_float(
-                row.metric_values[3].value
-            )
-        ),
+        field: row[field]
+        for field in METRIC_FIELD_NAMES
+        if field in row
     }
 
 
-def aggregate_ga4_rows(response_rows):
+def link_page_content(page_path, page_title, content_cache):
     """
-    Combine GA4 rows that resolve to the same
-    database identity.
-
-    GA4 includes pageTitle as a dimension, but the
-    database identity is:
-
-    metric_date + page_url + traffic_source
-
-    Without aggregation, page-title variations can
-    overwrite each other during collection.
+    Keep the content registry populated with GA4-seen pages
+    (previous collector behaviour). Returns a Content or None.
     """
 
-    aggregated = {}
-    extraction_errors = []
+    if not page_path.startswith("/"):
+        return None
 
-    for index, row in enumerate(
-        response_rows,
-        start=1,
-    ):
+    if page_path not in content_cache:
         try:
-            values = extract_ga4_values(
-                row
+            content, _ = get_or_create_website_content(
+                url=build_page_url(page_path),
+                title=page_title,
+                source="ga4_fallback",
             )
+        except ValueError:
+            content = None
 
-            key = (
-                values["metric_date"],
-                values["page_url"],
-                values["traffic_source"],
-            )
+        content_cache[page_path] = content
 
-            if key not in aggregated:
-                aggregated[key] = values
-                continue
+    return content_cache[page_path]
 
-            existing = aggregated[key]
 
-            existing["views"] += (
-                values["views"]
-            )
+def store_range_report(
+    report_type,
+    start_date,
+    end_date,
+    fetched,
+    period_key="custom",
+    content_cache=None,
+):
+    """
+    Upsert one range report and replace its rows.
 
-            existing["sessions"] += (
-                values["sessions"]
-            )
+    Must be called inside a transaction.
+    """
 
-            existing["users"] += (
-                values["users"]
-            )
-
-            existing[
-                "engagement_time_seconds"
-            ] += values[
-                "engagement_time_seconds"
-            ]
-
-            if (
-                not existing["page_title"]
-                or existing["page_title"]
-                == existing["page_path"]
-            ):
-                existing["page_title"] = (
-                    values["page_title"]
-                )
-
-        except Exception as error:
-            extraction_errors.append(
-                f"Row {index}: {error}"
-            )
-
-    return (
-        list(aggregated.values()),
-        extraction_errors,
+    report, created = GA4Report.objects.get_or_create(
+        property_id=GA4_PROPERTY_ID,
+        report_type=report_type,
+        start_date=start_date,
+        end_date=end_date,
+        defaults={"period_key": period_key},
     )
 
+    # A custom request for the same dates as a preset must not hide the
+    # preset from the dashboard.
+    if period_key != "custom":
+        report.period_key = period_key
 
-def save_ga4_row(values):
-    """
-    Save one already-aggregated GA4 row.
+    report.property_timezone = fetched["property_timezone"]
+    report.row_count = len(fetched["rows"])
+    report.save()
 
-    The outer collection function controls the
-    database transaction.
-    """
+    report.rows.all().delete()
 
-    content, _ = (
-        get_or_create_website_content(
-            url=values["page_url"],
-            title=values["page_title"],
-            source="ga4_fallback",
+    content_cache = (
+        content_cache
+        if content_cache is not None
+        else {}
+    )
+
+    new_rows = []
+
+    for row in fetched["rows"]:
+        dimension_value = row.get("dimension_value", "")
+
+        content = None
+
+        if report_type == GA4Report.REPORT_PAGE:
+            content = link_page_content(
+                dimension_value,
+                row.get("page_title", ""),
+                content_cache,
+            )
+
+        new_rows.append(
+            GA4ReportRow(
+                report=report,
+                dimension_value=dimension_value,
+                page_title=row.get("page_title", "")[:500],
+                content=content,
+                **metric_values(row),
+            )
         )
-    )
 
-    analytics_record, created = (
-        WebsiteAnalytics.objects
-        .update_or_create(
-            metric_date=values[
-                "metric_date"
-            ],
-            page_url=values["page_url"],
-            traffic_source=values[
-                "traffic_source"
-            ],
-            defaults={
-                "content": content,
-                "page_title": values[
-                    "page_title"
-                ],
-                "views": values["views"],
-                "sessions": values[
-                    "sessions"
-                ],
-                "users": values["users"],
-                "engagement_time_seconds": (
-                    values[
-                        "engagement_time_seconds"
-                    ]
-                ),
-            },
+    GA4ReportRow.objects.bulk_create(new_rows)
+
+    return report, created
+
+
+def store_daily_metrics(fetched):
+    """Upsert date-dimension rows. Must be called inside a transaction."""
+
+    created_count = 0
+
+    for row in fetched["rows"]:
+        _, created = GA4DailyMetric.objects.update_or_create(
+            property_id=GA4_PROPERTY_ID,
+            metric_date=row["metric_date"],
+            defaults=metric_values(row),
         )
+
+        created_count += int(created)
+
+    return created_count
+
+
+def fetch_range_reports(client, start_date, end_date):
+    return {
+        report_type: fetcher(client, start_date, end_date)
+        for report_type, fetcher in RANGE_REPORT_FETCHERS.items()
+    }
+
+
+def collect_ga4_range(
+    start_date,
+    end_date,
+    period_key="custom",
+    client=None,
+    include_daily=True,
+):
+    """
+    Fetch and store every range report for one exact date range.
+
+    All GA4 requests run before the database is touched, so a failed
+    request never leaves a partially refreshed range.
+    """
+
+    if start_date > end_date:
+        raise ValueError("start_date must be on or before end_date")
+
+    client = client or create_ga4_client()
+
+    fetched_reports = fetch_range_reports(client, start_date, end_date)
+
+    fetched_daily = (
+        fetch_ga4_daily_metrics(client, start_date, end_date)
+        if include_daily
+        else None
     )
 
-    return analytics_record, created
+    rows_written = 0
+    reports_created = 0
+
+    with transaction.atomic():
+        content_cache = {}
+
+        for report_type, fetched in fetched_reports.items():
+            _, created = store_range_report(
+                report_type,
+                start_date,
+                end_date,
+                fetched,
+                period_key=period_key,
+                content_cache=content_cache,
+            )
+
+            rows_written += len(fetched["rows"])
+            reports_created += int(created)
+
+        if fetched_daily:
+            store_daily_metrics(fetched_daily)
+            rows_written += len(fetched_daily["rows"])
+
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "period_key": period_key,
+        "rows_written": rows_written,
+        "reports_created": reports_created,
+        "reports_updated": len(fetched_reports) - reports_created,
+    }
 
 
-def collect_ga4_to_database():
+def get_ranges_to_collect(today):
     """
-    Fetch the complete GA4 report first, then refresh
-    the database inside one atomic transaction.
+    The ranges refreshed by a normal collector run, in the order they are
+    stored (presets last so their period_key wins on identical dates).
+    """
+
+    # Imported here to avoid a circular import with the weekly service.
+    from analytics_engine.services.weekly_report_service import (
+        get_previous_completed_week,
+    )
+
+    ranges = []
+
+    week_start, week_end = get_previous_completed_week(today)
+    ranges.append((week_start, week_end, "week"))
+
+    recent_cutoff = today - timedelta(days=RECENT_RANGE_REFRESH_DAYS)
+
+    recent_custom = (
+        GA4Report.objects.filter(
+            property_id=GA4_PROPERTY_ID,
+            report_type=GA4Report.REPORT_SUMMARY,
+            period_key="custom",
+            end_date__gte=recent_cutoff,
+        )
+        .values_list("start_date", "end_date")
+        .distinct()
+    )
+
+    for start_date, end_date in recent_custom:
+        ranges.append((start_date, end_date, "custom"))
+
+    for period_key, days in PRESET_PERIODS.items():
+        start_date, end_date = preset_range(days, today)
+        ranges.append((start_date, end_date, period_key))
+
+    # Drop duplicate date ranges, keeping the last (most specific) key.
+    unique_ranges = {}
+
+    for start_date, end_date, period_key in ranges:
+        unique_ranges.pop((start_date, end_date), None)
+        unique_ranges[(start_date, end_date)] = period_key
+
+    return [
+        (start_date, end_date, period_key)
+        for (start_date, end_date), period_key in unique_ranges.items()
+    ]
+
+
+def collect_ga4_to_database(start_date=None, end_date=None):
+    """
+    Refresh GA4 data.
+
+    Without arguments: daily metrics for the lookback window, plus range
+    reports for the dashboard presets, the previous completed week and
+    recently requested custom ranges.
+
+    With start_date/end_date: that exact range only (plus its daily rows).
     """
 
     log = SystemLog.objects.create(
@@ -372,181 +327,88 @@ def collect_ga4_to_database():
         records_processed=0,
     )
 
-    processed_count = 0
+    rows_written = 0
     created_count = 0
     updated_count = 0
-    stale_deleted_count = 0
 
     try:
         client = create_ga4_client()
 
-        end_date = (
-            timezone.localdate()
-            - timedelta(days=1)
-        )
+        today, property_timezone = get_property_today(client)
 
-        start_date = (
-            end_date
-            - timedelta(
-                days=GA4_LOOKBACK_DAYS - 1
-            )
-        )
+        if start_date and end_date:
+            ranges = [(start_date, end_date, "custom")]
+            daily_start, daily_end = start_date, end_date
+
+        else:
+            ranges = get_ranges_to_collect(today)
+            daily_start, daily_end = preset_range(GA4_LOOKBACK_DAYS, today)
 
         print(
-            "Collecting GA4 data from "
-            f"{start_date} to {end_date}"
+            f"GA4 property {GA4_PROPERTY_ID} "
+            f"(timezone {property_timezone}), today {today}"
         )
 
-        response_rows = (
-            fetch_ga4_report_rows(
-                client,
-                start_date,
-                end_date,
-            )
-        )
-
-        print(
-            "Raw GA4 response rows: "
-            f"{len(response_rows)}"
-        )
-
-        prepared_rows, extraction_errors = (
-            aggregate_ga4_rows(
-                response_rows
-            )
-        )
-
-        if extraction_errors:
-            error_preview = "\n".join(
-                extraction_errors[:20]
-            )
-
-            raise ValueError(
-                "GA4 response preparation failed "
-                f"for {len(extraction_errors)} "
-                "rows.\n"
-                f"{error_preview}"
-            )
-
-        print(
-            "Aggregated GA4 database rows: "
-            f"{len(prepared_rows)}"
-        )
+        daily = fetch_ga4_daily_metrics(client, daily_start, daily_end)
 
         with transaction.atomic():
-            existing_ids = set(
-                WebsiteAnalytics.objects
-                .filter(
-                    metric_date__range=(
-                        start_date,
-                        end_date,
-                    )
-                )
-                .values_list(
-                    "id",
-                    flat=True,
-                )
-            )
+            store_daily_metrics(daily)
 
-            saved_ids = set()
-
-            for index, values in enumerate(
-                prepared_rows,
-                start=1,
-            ):
-                analytics_record, created = (
-                    save_ga4_row(values)
-                )
-
-                saved_ids.add(
-                    analytics_record.id
-                )
-
-                processed_count += 1
-
-                if created:
-                    created_count += 1
-                else:
-                    updated_count += 1
-
-                if index % 250 == 0:
-                    print(
-                        "Saved GA4 rows: "
-                        f"{index}/"
-                        f"{len(prepared_rows)}"
-                    )
-
-            stale_ids = (
-                existing_ids
-                - saved_ids
-            )
-
-            if stale_ids:
-                deleted_result = (
-                    WebsiteAnalytics.objects
-                    .filter(id__in=stale_ids)
-                    .delete()
-                )
-
-                stale_deleted_count = (
-                    deleted_result[0]
-                )
-
-            log.status = "success"
-            log.records_processed = (
-                processed_count
-            )
-            log.error_message = ""
-            log.completed_at = (
-                timezone.now()
-            )
-
-            log.save(
-                update_fields=[
-                    "status",
-                    "records_processed",
-                    "error_message",
-                    "completed_at",
-                ]
-            )
+        rows_written += len(daily["rows"])
 
         print(
-            "GA4 database refresh committed."
+            f"Daily metrics {daily_start} to {daily_end}: "
+            f"{len(daily['rows'])} days"
         )
 
-        print(
-            "Stale GA4 rows removed: "
-            f"{stale_deleted_count}"
+        for range_start, range_end, period_key in ranges:
+            result = collect_ga4_range(
+                range_start,
+                range_end,
+                period_key=period_key,
+                client=client,
+                include_daily=False,
+            )
+
+            rows_written += result["rows_written"]
+            created_count += result["reports_created"]
+            updated_count += result["reports_updated"]
+
+            print(
+                f"Range {range_start} to {range_end} "
+                f"[{period_key}]: {result['rows_written']} rows"
+            )
+
+        log.status = "success"
+        log.records_processed = rows_written
+        log.error_message = ""
+        log.completed_at = timezone.now()
+        log.save(
+            update_fields=[
+                "status",
+                "records_processed",
+                "error_message",
+                "completed_at",
+            ]
         )
 
         return {
-            "processed": processed_count,
+            "processed": rows_written,
             "created": created_count,
             "updated": updated_count,
             "failed": 0,
-            "stale_deleted": (
-                stale_deleted_count
-            ),
-            "raw_rows": len(
-                response_rows
-            ),
-            "aggregated_rows": len(
-                prepared_rows
-            ),
-            "start_date": start_date,
-            "end_date": end_date,
+            "property": GA4_PROPERTY_ID,
+            "property_timezone": property_timezone,
+            "start_date": daily_start,
+            "end_date": daily_end,
+            "ranges": ranges,
         }
 
     except Exception as error:
         log.status = "failed"
-        log.records_processed = (
-            processed_count
-        )
+        log.records_processed = rows_written
         log.error_message = str(error)
-        log.completed_at = (
-            timezone.now()
-        )
-
+        log.completed_at = timezone.now()
         log.save(
             update_fields=[
                 "status",

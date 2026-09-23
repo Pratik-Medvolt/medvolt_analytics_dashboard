@@ -42,6 +42,12 @@ urlpatterns = [
     ),
 
     path(
+        "website/data.json",
+        views.website_dashboard_data,
+        name="website_data",
+    ),
+
+    path(
         "mailerlite/",
         views.mailerlite_dashboard,
         name="mailerlite",

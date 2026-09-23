@@ -88,6 +88,14 @@ class Content(models.Model):
 
 
 class WebsiteAnalytics(models.Model):
+    """
+    LEGACY: date x page x source rows from the previous GA4 collector.
+
+    No longer written or read by the dashboard. Its sessions/users columns
+    cannot be summed into site totals (see GA4Report below). Kept only to
+    preserve historical data.
+    """
+
     content = models.ForeignKey(
         Content,
         on_delete=models.SET_NULL,
@@ -145,6 +153,197 @@ class WebsiteAnalytics(models.Model):
 
     def __str__(self):
         return f"{self.page_title or self.page_url} - {self.metric_date}"
+
+
+# ---------------------------------------------------------------------------
+# GA4 reports
+#
+# Sessions and users are NON-ADDITIVE across dimensions: one session that
+# visits "/", "/pipeline" and "/about-us" appears in three page rows, and one
+# user active on two days appears in two date rows. Site totals therefore must
+# come from a GA4 query WITHOUT those dimensions - never from summing rows.
+#
+# GA4DailyMetric  - one row per date (date dimension only). Only views, event
+#                   count and engagement duration may be summed across days.
+# GA4Report       - a report fetched for an exact date range; its rows are
+#                   valid only for that range and must not be combined with
+#                   rows from other ranges.
+# ---------------------------------------------------------------------------
+
+
+class GA4MetricFields(models.Model):
+    """
+    Raw GA4 metric values. NULL means the metric was not requested for
+    that report (for example sessions on page rows).
+    """
+
+    views = models.PositiveIntegerField(null=True, blank=True)
+    sessions = models.PositiveIntegerField(null=True, blank=True)
+    total_users = models.PositiveIntegerField(null=True, blank=True)
+    active_users = models.PositiveIntegerField(null=True, blank=True)
+    new_users = models.PositiveIntegerField(null=True, blank=True)
+    engaged_sessions = models.PositiveIntegerField(null=True, blank=True)
+    event_count = models.PositiveIntegerField(null=True, blank=True)
+
+    # GA4 userEngagementDuration, in seconds.
+    engagement_duration_seconds = models.FloatField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        abstract = True
+
+    @property
+    def avg_engagement_time_per_session(self):
+        """GA4 "Average engagement time per session"."""
+        if not self.sessions or self.engagement_duration_seconds is None:
+            return None
+        return self.engagement_duration_seconds / self.sessions
+
+    @property
+    def avg_engagement_time_per_active_user(self):
+        """GA4 "Average engagement time per active user"."""
+        if not self.active_users or self.engagement_duration_seconds is None:
+            return None
+        return self.engagement_duration_seconds / self.active_users
+
+    @property
+    def engagement_rate(self):
+        """GA4 engagementRate = engagedSessions / sessions."""
+        if not self.sessions or self.engaged_sessions is None:
+            return None
+        return self.engaged_sessions / self.sessions
+
+
+class GA4DailyMetric(GA4MetricFields):
+    property_id = models.CharField(max_length=50, db_index=True)
+
+    metric_date = models.DateField(db_index=True)
+
+    collected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "analytics_data_ga4dailymetric"
+        ordering = ["metric_date"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["property_id", "metric_date"],
+                name="unique_ga4_daily_metric",
+            )
+        ]
+
+    def __str__(self):
+        return f"GA4 {self.property_id} {self.metric_date}"
+
+
+class GA4Report(models.Model):
+    REPORT_SUMMARY = "summary"
+    REPORT_SOURCE_MEDIUM = "source_medium"
+    REPORT_CHANNEL_GROUP = "channel_group"
+    REPORT_PAGE = "page"
+
+    REPORT_TYPE_CHOICES = [
+        (REPORT_SUMMARY, "Site summary"),
+        (REPORT_SOURCE_MEDIUM, "Sessions by source / medium"),
+        (REPORT_CHANNEL_GROUP, "Sessions by default channel group"),
+        (REPORT_PAGE, "Page performance"),
+    ]
+
+    property_id = models.CharField(max_length=50, db_index=True)
+
+    report_type = models.CharField(
+        max_length=30,
+        choices=REPORT_TYPE_CHOICES,
+    )
+
+    start_date = models.DateField()
+    end_date = models.DateField()
+
+    # "last_7_days", "last_30_days", "last_90_days", "week" or "custom".
+    period_key = models.CharField(
+        max_length=30,
+        default="custom",
+        db_index=True,
+    )
+
+    property_timezone = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+    )
+
+    row_count = models.PositiveIntegerField(default=0)
+
+    collected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "analytics_data_ga4report"
+        ordering = ["-end_date", "report_type"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "property_id",
+                    "report_type",
+                    "start_date",
+                    "end_date",
+                ],
+                name="unique_ga4_report_range",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"GA4 {self.report_type} "
+            f"{self.start_date} to {self.end_date}"
+        )
+
+
+class GA4ReportRow(GA4MetricFields):
+    report = models.ForeignKey(
+        GA4Report,
+        on_delete=models.CASCADE,
+        related_name="rows",
+    )
+
+    # Raw GA4 dimension value (page path, "source / medium", channel
+    # group). Empty for the summary report. Stored exactly as GA4 returns
+    # it so values reconcile with the GA4 UI.
+    dimension_value = models.CharField(
+        max_length=2048,
+        blank=True,
+        default="",
+    )
+
+    page_title = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+    )
+
+    content = models.ForeignKey(
+        Content,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ga4_report_rows",
+    )
+
+    class Meta:
+        db_table = "analytics_data_ga4reportrow"
+        ordering = ["report", "-sessions", "-views"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["report", "dimension_value"],
+                name="unique_ga4_report_row",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.report} - {self.dimension_value or 'total'}"
 
 
 class SearchConsoleAnalytics(models.Model):

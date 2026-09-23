@@ -8,9 +8,35 @@ from analytics_engine.models import (
     MailerLiteAnalytics,
     SearchConsoleAnalytics,
     SystemLog,
-    WebsiteAnalytics,
     WeeklyReport,
 )
+
+
+def get_week_website_summary(week_start, week_end):
+    """
+    GA4 site totals for the week, fetched from GA4 if the GA4 collector
+    has not stored this exact range yet.
+    """
+
+    from analytics_engine.collectors.ga4_db_collector import (
+        collect_ga4_range,
+    )
+    from analytics_engine.services.website_dashboard import (
+        get_range_summary,
+    )
+
+    summary = get_range_summary(week_start, week_end)
+
+    if summary is None:
+        collect_ga4_range(
+            week_start,
+            week_end,
+            period_key="week",
+        )
+
+        summary = get_range_summary(week_start, week_end)
+
+    return summary
 
 
 def get_previous_completed_week(reference_date=None):
@@ -293,20 +319,11 @@ def generate_weekly_report(
     )
 
     try:
-        website_totals = (
-            WebsiteAnalytics.objects
-            .filter(
-                metric_date__range=(
-                    week_start,
-                    week_end,
-                )
-            )
-            .aggregate(
-                total_views=Sum("views"),
-                total_sessions=Sum(
-                    "sessions"
-                ),
-            )
+        # Week totals from the GA4 summary report for exactly this
+        # week. Summing page/date rows would over-count sessions.
+        website_summary = get_week_website_summary(
+            week_start,
+            week_end,
         )
 
         search_totals = (
@@ -326,17 +343,11 @@ def generate_weekly_report(
         )
 
         website_views = int(
-            website_totals.get(
-                "total_views"
-            )
-            or 0
+            website_summary.views or 0
         )
 
         website_sessions = int(
-            website_totals.get(
-                "total_sessions"
-            )
-            or 0
+            website_summary.sessions or 0
         )
 
         search_clicks = int(

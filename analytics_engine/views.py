@@ -1,7 +1,8 @@
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from django.contrib.auth.decorators import login_required
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import (
     Avg,
     Count,
@@ -11,7 +12,7 @@ from django.db.models import (
     Max,
     Sum,
 )
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -20,12 +21,21 @@ def healthz(request):
     """Unauthenticated liveness endpoint for Docker/monitoring health checks."""
     return HttpResponse("ok", content_type="text/plain")
 
+from analytics_engine.collectors.ga4_db_collector import (
+    collect_ga4_range,
+)
 from analytics_engine.models import (
     MailerLiteAnalytics,
     SearchConsoleAnalytics,
     SystemLog,
-    WebsiteAnalytics,
     WeeklyReport,
+)
+from analytics_engine.services.website_dashboard import (
+    build_website_dashboard_payload,
+    get_preset_range,
+    get_range_summary,
+    has_complete_range,
+    serialize_collector,
 )
 
 
@@ -198,10 +208,13 @@ def overview(request):
         get_latest_mailerlite_campaigns()
     )
 
-    website_totals = WebsiteAnalytics.objects.aggregate(
-        views=Sum("views"),
-        sessions=Sum("sessions"),
-        users=Sum("users"),
+    # Site totals from the GA4 summary report - never summed page rows.
+    website_range = get_preset_range(30)
+
+    website_summary = (
+        get_range_summary(*website_range)
+        if website_range
+        else None
     )
 
     search_totals = SearchConsoleAnalytics.objects.aggregate(
@@ -223,9 +236,21 @@ def overview(request):
     context = {
         "page_title": "Overview",
 
-        "website_views": website_totals["views"] or 0,
-        "website_sessions": website_totals["sessions"] or 0,
-        "website_users": website_totals["users"] or 0,
+        "website_views": (
+            website_summary.views if website_summary else 0
+        ),
+        "website_sessions": (
+            website_summary.sessions if website_summary else 0
+        ),
+        "website_total_users": (
+            website_summary.total_users if website_summary else 0
+        ),
+        "website_start_date": (
+            website_range[0] if website_range else None
+        ),
+        "website_end_date": (
+            website_range[1] if website_range else None
+        ),
 
         "search_clicks": search_totals["clicks"] or 0,
         "search_impressions": (
@@ -351,255 +376,175 @@ def mailerlite_dashboard(request):
     )
 
 
+WEBSITE_PERIODS = {
+    "7": 7,
+    "30": 30,
+    "90": 90,
+}
+
+# Earliest date the GA4 Data API accepts, and the longest custom range.
+GA4_MIN_DATE = date(2015, 8, 14)
+WEBSITE_MAX_CUSTOM_DAYS = 400
+
+
+def parse_iso_date(value):
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def resolve_website_period(request):
+    """
+    Resolve the selected period to an inclusive (start_date, end_date).
+
+    ?start=YYYY-MM-DD&end=YYYY-MM-DD selects an exact custom range;
+    otherwise ?days=7|30|90 selects the latest collected GA4
+    "Last N days" preset.
+
+    Returns (start_date, end_date, selected_period, error).
+    """
+
+    start_value = request.GET.get("start")
+    end_value = request.GET.get("end")
+
+    if start_value or end_value:
+        start_date = parse_iso_date(start_value)
+        end_date = parse_iso_date(end_value)
+
+        if not start_date or not end_date:
+            return None, None, "custom", (
+                "Enter both dates as YYYY-MM-DD."
+            )
+
+        if start_date > end_date:
+            return None, None, "custom", (
+                "The start date must be on or before the end date."
+            )
+
+        if start_date < GA4_MIN_DATE:
+            return None, None, "custom", (
+                f"GA4 data is not available before {GA4_MIN_DATE}."
+            )
+
+        if (end_date - start_date).days + 1 > WEBSITE_MAX_CUSTOM_DAYS:
+            return None, None, "custom", (
+                f"Custom ranges are limited to "
+                f"{WEBSITE_MAX_CUSTOM_DAYS} days."
+            )
+
+        return start_date, end_date, "custom", None
+
+    selected_period = request.GET.get("days", "30")
+
+    if selected_period not in WEBSITE_PERIODS:
+        selected_period = "30"
+
+    preset = get_preset_range(WEBSITE_PERIODS[selected_period])
+
+    if not preset:
+        return None, None, selected_period, None
+
+    return preset[0], preset[1], selected_period, None
+
+
+def ensure_website_range(start_date, end_date):
+    """
+    Custom ranges not collected yet are fetched from GA4 on demand and
+    stored like any other range. Returns an error message or None.
+    """
+
+    if has_complete_range(start_date, end_date):
+        return None
+
+    try:
+        collect_ga4_range(start_date, end_date)
+    except Exception as error:
+        return f"Could not fetch this range from GA4: {error}"
+
+    return None
+
+
 @login_required
 def website_dashboard(request):
     """
     GA4 website analytics dashboard.
 
-    Displays website performance for the selected
-    7, 30 or 90-day period.
+    KPI cards, daily chart, acquisition and pages each come from their own
+    GA4 report for the exact selected range - see
+    services/website_dashboard.py.
     """
 
-    allowed_periods = {
-        "7": 7,
-        "30": 30,
-        "90": 90,
-    }
-
-    selected_period = request.GET.get(
-        "days",
-        "30",
+    start_date, end_date, selected_period, error = (
+        resolve_website_period(request)
     )
 
-    days = allowed_periods.get(
-        selected_period,
-        30,
-    )
+    if start_date and selected_period == "custom":
+        error = ensure_website_range(start_date, end_date)
 
-    latest_metric_date = (
-        WebsiteAnalytics.objects.aggregate(
-            latest_date=Max("metric_date")
-        )["latest_date"]
-    )
+    payload = None
 
-    if latest_metric_date:
-        start_date = (
-            latest_metric_date
-            - timedelta(days=days - 1)
+    if start_date and not error:
+        payload = build_website_dashboard_payload(
+            start_date,
+            end_date,
         )
 
-        website_rows = WebsiteAnalytics.objects.filter(
-            metric_date__gte=start_date,
-            metric_date__lte=latest_metric_date,
-        )
+    summary = payload["summary"] if payload else None
+    daily = payload["daily"] if payload else []
+    traffic_sources = payload["traffic_sources"] if payload else []
+    pages = payload["pages"] if payload else []
 
-    else:
-        start_date = None
-        website_rows = WebsiteAnalytics.objects.none()
-
-    totals = website_rows.aggregate(
-        total_views=Sum("views"),
-        total_sessions=Sum("sessions"),
-        total_users=Sum("users"),
-        total_engagement=Sum(
-            "engagement_time_seconds"
-        ),
-    )
-
-    total_views = totals["total_views"] or 0
-    total_sessions = totals["total_sessions"] or 0
-    total_users = totals["total_users"] or 0
-    total_engagement = (
-        totals["total_engagement"] or 0
-    )
-
-    if total_sessions:
-        average_engagement = round(
-            total_engagement / total_sessions,
-            2,
-        )
-    else:
-        average_engagement = 0
-
-    daily_rows = list(
-        website_rows.values(
-            "metric_date"
-        )
-        .annotate(
-            views=Sum("views"),
-            sessions=Sum("sessions"),
-            users=Sum("users"),
-        )
-        .order_by("metric_date")
-    )
-
-    daily_labels = [
-        row["metric_date"].strftime("%d %b")
-        for row in daily_rows
-    ]
-
-    daily_views = [
-        row["views"] or 0
-        for row in daily_rows
-    ]
-
-    daily_sessions = [
-        row["sessions"] or 0
-        for row in daily_rows
-    ]
-
-    daily_users = [
-        row["users"] or 0
-        for row in daily_rows
-    ]
-
-    source_rows = list(
-        website_rows.values(
-            "traffic_source"
-        )
-        .annotate(
-            views=Sum("views"),
-            sessions=Sum("sessions"),
-            users=Sum("users"),
-        )
-        .order_by("-views")
-    )
-
-    source_labels = [
-        row["traffic_source"] or "(not set)"
-        for row in source_rows[:10]
-    ]
-
-    source_views = [
-        row["views"] or 0
-        for row in source_rows[:10]
-    ]
-
-    top_source = (
-        source_rows[0]
-        if source_rows
-        else None
-    )
-
-    top_pages = list(
-        website_rows.values(
-            "page_url",
-            "page_title",
-        )
-        .annotate(
-            views=Sum("views"),
-            sessions=Sum("sessions"),
-            users=Sum("users"),
-            engagement=Sum(
-                "engagement_time_seconds"
-            ),
-        )
-        .order_by("-views")[:10]
-    )
-
-    for page in top_pages:
-        page_sessions = page["sessions"] or 0
-        page_engagement = page["engagement"] or 0
-
-        if page_sessions:
-            page["average_engagement"] = round(
-                page_engagement / page_sessions,
-                2,
-            )
-        else:
-            page["average_engagement"] = 0
-
-    top_page_labels = [
-        (
-            page["page_title"][:35]
-            if page["page_title"]
-            else page["page_url"][:35]
-        )
-        for page in top_pages
-    ]
-
-    top_page_views = [
-        page["views"] or 0
-        for page in top_pages
-    ]
-
-    page_table = list(
-        website_rows.values(
-            "page_url",
-            "page_title",
-        )
-        .annotate(
-            views=Sum("views"),
-            sessions=Sum("sessions"),
-            users=Sum("users"),
-            engagement=Sum(
-                "engagement_time_seconds"
-            ),
-        )
-        .order_by("-views")
-    )
-
-    for page in page_table:
-        page_sessions = page["sessions"] or 0
-        page_engagement = page["engagement"] or 0
-
-        if page_sessions:
-            page["average_engagement"] = round(
-                page_engagement / page_sessions,
-                2,
-            )
-        else:
-            page["average_engagement"] = 0
-
-    latest_log = (
-        SystemLog.objects
-        .filter(module="ga4_collector")
-        .order_by("-started_at")
-        .first()
-    )
+    top_pages = pages[:10]
 
     context = {
         "page_title": "Website Analytics",
 
-        "selected_period": str(days),
+        "selected_period": selected_period,
         "start_date": start_date,
-        "end_date": latest_metric_date,
+        "end_date": end_date,
+        "period_error": error,
 
-        "total_views": total_views,
-        "total_sessions": total_sessions,
-        "total_users": total_users,
-        "average_engagement": average_engagement,
-
-        "top_source": top_source,
-        "top_pages": top_pages,
-        "page_table": page_table,
-        "latest_log": latest_log,
+        "period": payload["period"] if payload else None,
+        "summary": summary,
+        "traffic_sources": traffic_sources,
+        "channel_groups": (
+            payload["channel_groups"] if payload else []
+        ),
+        "pages": pages,
+        "collector": serialize_collector(),
 
         "daily_labels": json.dumps(
-            daily_labels
+            [row["date"].strftime("%d %b") for row in daily]
         ),
         "daily_views": json.dumps(
-            daily_views
+            [row["views"] or 0 for row in daily]
         ),
         "daily_sessions": json.dumps(
-            daily_sessions
+            [row["sessions"] or 0 for row in daily]
         ),
-        "daily_users": json.dumps(
-            daily_users
+        "daily_total_users": json.dumps(
+            [row["total_users"] or 0 for row in daily]
         ),
 
         "source_labels": json.dumps(
-            source_labels
+            [row["source_medium"] for row in traffic_sources]
         ),
-        "source_views": json.dumps(
-            source_views
+        "source_sessions": json.dumps(
+            [row["sessions"] or 0 for row in traffic_sources]
         ),
 
         "top_page_labels": json.dumps(
-            top_page_labels
+            [
+                (page["page_title"] or page["page_path"])[:35]
+                for page in top_pages
+            ]
+        ),
+        "top_page_paths": json.dumps(
+            [page["page_path"] for page in top_pages]
         ),
         "top_page_views": json.dumps(
-            top_page_views
+            [page["views"] or 0 for page in top_pages]
         ),
     }
 
@@ -607,6 +552,32 @@ def website_dashboard(request):
         request,
         "dashboard/website.html",
         context,
+    )
+
+
+@login_required
+def website_dashboard_data(request):
+    """JSON form of the Website Analytics dashboard data."""
+
+    start_date, end_date, selected_period, error = (
+        resolve_website_period(request)
+    )
+
+    if start_date and selected_period == "custom":
+        error = ensure_website_range(start_date, end_date)
+
+    if error:
+        return JsonResponse({"error": error}, status=400)
+
+    if not start_date:
+        return JsonResponse(
+            {"error": "No GA4 data has been collected yet."},
+            status=404,
+        )
+
+    return JsonResponse(
+        build_website_dashboard_payload(start_date, end_date),
+        encoder=DjangoJSONEncoder,
     )
 
 

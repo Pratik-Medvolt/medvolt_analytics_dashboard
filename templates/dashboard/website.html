@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load ga4_format %}
 
 {% block title %}
     Website Analytics | Medvolt
@@ -15,8 +16,9 @@
         </h2>
 
         <p>
-            Page views, sessions, users, engagement
-            and traffic-source performance.
+            Views, sessions, users, engagement,
+            traffic acquisition and page performance,
+            as defined in Google Analytics 4.
         </p>
     </div>
 
@@ -64,9 +66,59 @@
 
         </div>
 
+        <form method="get" class="period-filter date-range-form">
+
+            <label>
+                <span>From</span>
+                <input
+                    type="date"
+                    name="start"
+                    value="{{ start_date|date:'Y-m-d' }}"
+                    required
+                >
+            </label>
+
+            <label>
+                <span>To</span>
+                <input
+                    type="date"
+                    name="end"
+                    value="{{ end_date|date:'Y-m-d' }}"
+                    required
+                >
+            </label>
+
+            <button
+                type="submit"
+                class="period-button
+                {% if selected_period == 'custom' %}
+                    active
+                {% endif %}"
+            >
+                Apply
+            </button>
+
+        </form>
+
     </div>
 
 </section>
+
+
+{% if period_error %}
+
+    <div class="collector-error">
+        {{ period_error }}
+    </div>
+
+{% elif not summary %}
+
+    <div class="panel empty-state">
+        No GA4 data has been collected for this period yet.
+        Run <code>python manage.py collect_ga4</code>.
+    </div>
+
+{% endif %}
 
 
 <section class="kpi-grid">
@@ -86,11 +138,11 @@
         </div>
 
         <div class="kpi-value">
-            {{ total_views }}
+            {% if summary %}{{ summary.views }}{% else %}—{% endif %}
         </div>
 
         <div class="kpi-description">
-            Total views during selected period
+            GA4 Views during selected period
         </div>
 
     </article>
@@ -111,11 +163,11 @@
         </div>
 
         <div class="kpi-value">
-            {{ total_sessions }}
+            {% if summary %}{{ summary.sessions }}{% else %}—{% endif %}
         </div>
 
         <div class="kpi-description">
-            Website sessions
+            GA4 Sessions, site-wide
         </div>
 
     </article>
@@ -126,7 +178,7 @@
         <div class="kpi-card-top">
 
             <span class="kpi-label">
-                Users
+                Total Users
             </span>
 
             <span class="kpi-icon">
@@ -136,11 +188,11 @@
         </div>
 
         <div class="kpi-value">
-            {{ total_users }}
+            {% if summary %}{{ summary.total_users }}{% else %}—{% endif %}
         </div>
 
         <div class="kpi-description">
-            Source-attributed GA4 users
+            Unique GA4 Total Users in period
         </div>
 
     </article>
@@ -151,7 +203,7 @@
         <div class="kpi-card-top">
 
             <span class="kpi-label">
-                Avg. Engagement
+                Avg. Engagement / Session
             </span>
 
             <span class="kpi-icon">
@@ -160,17 +212,69 @@
 
         </div>
 
-        <div class="kpi-value">
-            {{ average_engagement }}s
+        <div
+            class="kpi-value"
+            {% if summary and summary.avg_engagement_time_per_session is not None %}
+                title="{{ summary.avg_engagement_time_per_session|floatformat:2 }}s exactly"
+            {% endif %}
+        >
+            {{ summary.avg_engagement_time_per_session|ga4_duration }}
         </div>
 
         <div class="kpi-description">
-            Engagement time per session
+            User engagement duration ÷ sessions
         </div>
 
     </article>
 
 </section>
+
+
+{% if summary %}
+
+<section class="panel metric-strip-panel">
+
+    <div class="metric-strip">
+
+        <div class="rate-item">
+            <span>Active Users</span>
+            <strong>{{ summary.active_users }}</strong>
+        </div>
+
+        <div class="rate-item">
+            <span>New Users</span>
+            <strong>{{ summary.new_users }}</strong>
+        </div>
+
+        <div class="rate-item">
+            <span>Engaged Sessions</span>
+            <strong>{{ summary.engaged_sessions }}</strong>
+        </div>
+
+        <div class="rate-item">
+            <span>Engagement Rate</span>
+            <strong>{{ summary.engagement_rate|ga4_percent }}</strong>
+        </div>
+
+        <div class="rate-item">
+            <span>Avg. Engagement / Active User</span>
+            <strong
+                title="{{ summary.avg_engagement_time_per_active_user|floatformat:2 }}s exactly"
+            >
+                {{ summary.avg_engagement_time_per_active_user|ga4_duration }}
+            </strong>
+        </div>
+
+        <div class="rate-item">
+            <span>Event Count</span>
+            <strong>{{ summary.event_count }}</strong>
+        </div>
+
+    </div>
+
+</section>
+
+{% endif %}
 
 
 <section class="dashboard-layout">
@@ -185,7 +289,9 @@
                 </h3>
 
                 <p>
-                    Views, sessions and users by day
+                    Views, sessions and total users per day.
+                    Daily users are not additive: a user active
+                    on several days counts on each day.
                 </p>
             </div>
 
@@ -204,11 +310,14 @@
 
             <div>
                 <h3>
-                    Traffic Sources
+                    Traffic Acquisition
                 </h3>
 
                 <p>
-                    Views by acquisition source
+                    Sessions by source / medium
+                    {% if traffic_sources|length > 3 %}
+                        (top 3 + Other; full list below)
+                    {% endif %}
                 </p>
             </div>
 
@@ -218,20 +327,21 @@
             <canvas id="trafficSourceChart"></canvas>
         </div>
 
-        {% if top_source %}
+        {% if traffic_sources %}
 
             <div class="source-highlight">
 
                 <span>
-                    Top source
+                    Top source / medium
                 </span>
 
                 <strong>
-                    {{ top_source.traffic_source }}
+                    {{ traffic_sources.0.source_medium }}
                 </strong>
 
                 <small>
-                    {{ top_source.views }} views
+                    {{ traffic_sources.0.sessions }} sessions
+                    ({{ traffic_sources.0.session_share|ga4_percent }})
                 </small>
 
             </div>
@@ -255,7 +365,7 @@
                 </h3>
 
                 <p>
-                    Pages receiving the highest views
+                    Pages with the most views
                 </p>
             </div>
 
@@ -278,34 +388,79 @@
                 </h3>
 
                 <p>
-                    Latest database collection
+                    Latest collection run and data freshness
                 </p>
             </div>
 
         </div>
 
-        {% if latest_log %}
+        <div class="rate-summary">
 
-            <div class="rate-summary">
+            <div class="rate-item">
+
+                <span>GA4 Property</span>
+
+                <strong>
+                    {% if period.property_id %}
+                        {{ period.property_id }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong>
+
+            </div>
+
+            <div class="rate-item">
+
+                <span>Date range shown</span>
+
+                <strong>
+                    {% if period %}
+                        {{ period.start_date|date:"d M" }}
+                        –
+                        {{ period.end_date|date:"d M Y" }}
+                        ({{ period.days }} days)
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong>
+
+            </div>
+
+            <div class="rate-item">
+
+                <span>Property timezone</span>
+
+                <strong>
+                    {{ period.property_timezone|default:"—" }}
+                </strong>
+
+            </div>
+
+            <div class="rate-item">
+
+                <span>Range last synced</span>
+
+                <strong>
+                    {% if period.last_synced %}
+                        {{ period.last_synced|date:"d M, H:i" }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong>
+
+            </div>
+
+            {% if collector %}
 
                 <div class="rate-item">
 
-                    <span>Status</span>
+                    <span>Last run status</span>
 
                     <strong
-                        class="status-{{ latest_log.status }}"
+                        class="status-{{ collector.status }}"
                     >
-                        {{ latest_log.status|title }}
-                    </strong>
-
-                </div>
-
-                <div class="rate-item">
-
-                    <span>Records processed</span>
-
-                    <strong>
-                        {{ latest_log.records_processed }}
+                        {{ collector.status|title }}
                     </strong>
 
                 </div>
@@ -315,7 +470,7 @@
                     <span>Started</span>
 
                     <strong>
-                        {{ latest_log.started_at|date:"d M, H:i" }}
+                        {{ collector.started_at|date:"d M, H:i" }}
                     </strong>
 
                 </div>
@@ -325,8 +480,8 @@
                     <span>Completed</span>
 
                     <strong>
-                        {% if latest_log.completed_at %}
-                            {{ latest_log.completed_at|date:"d M, H:i" }}
+                        {% if collector.completed_at %}
+                            {{ collector.completed_at|date:"d M, H:i" }}
                         {% else %}
                             —
                         {% endif %}
@@ -334,23 +489,154 @@
 
                 </div>
 
-            </div>
+                <div class="rate-item">
 
-            {% if latest_log.error_message %}
+                    <span
+                        title="Database rows written by the collector. Not a traffic metric."
+                    >
+                        DB rows written
+                    </span>
 
-                <div class="collector-error">
-                    {{ latest_log.error_message|truncatechars:250 }}
+                    <strong>
+                        {{ collector.rows_written }}
+                    </strong>
+
                 </div>
 
             {% endif %}
 
-        {% else %}
+        </div>
+
+        {% if collector.error_message %}
+
+            <div class="collector-error">
+                {{ collector.error_message|truncatechars:250 }}
+            </div>
+
+        {% elif not collector %}
 
             <div class="empty-state">
-                No GA4 collector logs available.
+                No GA4 collector runs recorded.
             </div>
 
         {% endif %}
+
+    </article>
+
+</section>
+
+
+<section class="dashboard-layout">
+
+    <article class="panel panel-wide">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Sessions by Source / Medium
+                </h3>
+
+                <p>
+                    GA4 Traffic acquisition, session source / medium
+                </p>
+            </div>
+
+        </div>
+
+        <div class="table-scroll">
+
+            <table class="dashboard-table">
+
+                <thead>
+                    <tr>
+                        <th>Source / Medium</th>
+                        <th>Sessions</th>
+                        <th>Share</th>
+                        <th>Engaged Sessions</th>
+                        <th>Engagement Rate</th>
+                        <th>Avg. Engagement / Session</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for source in traffic_sources %}
+
+                        <tr>
+                            <td><strong>{{ source.source_medium }}</strong></td>
+                            <td>{{ source.sessions }}</td>
+                            <td>{{ source.session_share|ga4_percent }}</td>
+                            <td>{{ source.engaged_sessions }}</td>
+                            <td>{{ source.engagement_rate|ga4_percent }}</td>
+                            <td>{{ source.avg_engagement_time_per_session|ga4_duration }}</td>
+                        </tr>
+
+                    {% empty %}
+
+                        <tr>
+                            <td colspan="6">
+                                <div class="empty-state">
+                                    No acquisition data for this period.
+                                </div>
+                            </td>
+                        </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </article>
+
+
+    <article class="panel">
+
+        <div class="panel-header">
+
+            <div>
+                <h3>
+                    Default Channel Group
+                </h3>
+
+                <p>
+                    Sessions by session default channel group
+                </p>
+            </div>
+
+        </div>
+
+        <div class="channel-list">
+
+            {% for channel in channel_groups %}
+
+                <div class="channel-row">
+
+                    <div>
+                        <strong>{{ channel.channel_group }}</strong>
+                        <span>
+                            {{ channel.session_share|ga4_percent }} of sessions
+                        </span>
+                    </div>
+
+                    <div class="channel-number">
+                        {{ channel.sessions }}
+                    </div>
+
+                </div>
+
+            {% empty %}
+
+                <div class="empty-state">
+                    No channel data for this period.
+                </div>
+
+            {% endfor %}
+
+        </div>
 
     </article>
 
@@ -367,8 +653,9 @@
             </h3>
 
             <p>
-                Aggregated page metrics for the
-                selected period
+                GA4 Pages and screens by page path for the
+                selected period. Active users per page overlap
+                and do not add up to the site total.
             </p>
         </div>
 
@@ -383,16 +670,15 @@
                 <tr>
                     <th>Page</th>
                     <th>Views</th>
-                    <th>Sessions</th>
-                    <th>Users</th>
-                    <th>Avg. Engagement</th>
+                    <th>Active Users</th>
+                    <th>Avg. Engagement / Active User</th>
                 </tr>
 
             </thead>
 
             <tbody>
 
-                {% for page in page_table %}
+                {% for page in pages %}
 
                     <tr>
 
@@ -402,7 +688,7 @@
                                 {% if page.page_title %}
                                     {{ page.page_title }}
                                 {% else %}
-                                    Untitled Page
+                                    {{ page.page_path }}
                                 {% endif %}
                             </strong>
 
@@ -411,8 +697,9 @@
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 class="table-link"
+                                title="{{ page.page_path }}"
                             >
-                                {{ page.page_url }}
+                                {{ page.page_path }}
                             </a>
 
                         </td>
@@ -422,15 +709,11 @@
                         </td>
 
                         <td>
-                            {{ page.sessions }}
+                            {{ page.active_users }}
                         </td>
 
                         <td>
-                            {{ page.users }}
-                        </td>
-
-                        <td>
-                            {{ page.average_engagement }}s
+                            {{ page.avg_engagement_time_per_active_user|ga4_duration }}
                         </td>
 
                     </tr>
@@ -439,7 +722,7 @@
 
                     <tr>
 
-                        <td colspan="5">
+                        <td colspan="4">
 
                             <div class="empty-state">
                                 No GA4 analytics available
@@ -469,12 +752,13 @@
     const dailyLabels = {{ daily_labels|safe }};
     const dailyViews = {{ daily_views|safe }};
     const dailySessions = {{ daily_sessions|safe }};
-    const dailyUsers = {{ daily_users|safe }};
+    const dailyTotalUsers = {{ daily_total_users|safe }};
 
     const sourceLabels = {{ source_labels|safe }};
-    const sourceViews = {{ source_views|safe }};
+    const sourceSessions = {{ source_sessions|safe }};
 
     const topPageLabels = {{ top_page_labels|safe }};
+    const topPagePaths = {{ top_page_paths|safe }};
     const topPageViews = {{ top_page_views|safe }};
 
     const colors = window.MEDVOLT_CHART_COLORS || {
@@ -515,8 +799,8 @@
                         pointRadius: 2
                     },
                     {
-                        label: "Users",
-                        data: dailyUsers,
+                        label: "Total Users",
+                        data: dailyTotalUsers,
                         borderColor: colors.orange,
                         pointBackgroundColor: colors.orange,
                         borderWidth: 2,
@@ -559,20 +843,30 @@
         // Cap at 3 named slices + "Other" — a doughnut shows every slice at
         // once, and only the first 3 palette slots are validated as
         // pairwise distinguishable together (see the dataviz color-formula).
+        // "Other" is the exact sum of the hidden rows, which are all listed
+        // in the Sessions by Source / Medium table.
         const sourcePalette = [colors.green, colors.blue, colors.orange];
         let sliceLabels = sourceLabels;
-        let sliceValues = sourceViews;
+        let sliceValues = sourceSessions;
         let sliceColors = sourcePalette;
 
         if (sourceLabels.length > 3) {
-            const otherTotal = sourceViews
+            const hiddenCount = sourceLabels.length - 3;
+            const otherTotal = sourceSessions
                 .slice(3)
                 .reduce((sum, value) => sum + value, 0);
 
-            sliceLabels = sourceLabels.slice(0, 3).concat(["Other"]);
-            sliceValues = sourceViews.slice(0, 3).concat([otherTotal]);
+            sliceLabels = sourceLabels.slice(0, 3).concat([
+                `Other (${hiddenCount} sources)`
+            ]);
+            sliceValues = sourceSessions.slice(0, 3).concat([otherTotal]);
             sliceColors = sourcePalette.concat(["#c3c2b7"]);
         }
+
+        const totalSessions = sourceSessions.reduce(
+            (sum, value) => sum + value,
+            0
+        );
 
         new Chart(trafficSourceCanvas, {
             type: "doughnut",
@@ -582,6 +876,7 @@
 
                 datasets: [
                     {
+                        label: "Sessions",
                         data: sliceValues,
                         backgroundColor: sliceColors,
                         borderColor: "#ffffff",
@@ -597,6 +892,18 @@
                 plugins: {
                     legend: {
                         position: "bottom"
+                    },
+
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const share = totalSessions
+                                    ? (context.parsed / totalSessions * 100).toFixed(1)
+                                    : "0.0";
+
+                                return ` ${context.parsed} sessions (${share}%)`;
+                            }
+                        }
                     }
                 }
             }
@@ -635,6 +942,12 @@
                 plugins: {
                     legend: {
                         display: false
+                    },
+
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => topPagePaths[items[0].dataIndex]
+                        }
                     }
                 },
 
