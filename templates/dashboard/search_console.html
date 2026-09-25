@@ -19,50 +19,90 @@ Search Console Analytics
             </h1>
 
             <p class="sc-description">
-                Monitor search visibility, clicks,
-                impressions, queries and ranking
-                position for Medvolt website content.
+                Google Search performance for Medvolt.
             </p>
+
+            {% if period %}
+                <p class="sc-freshness-line" data-freshness>
+                    {{ period.start_date|date:"j M" }}
+                    –
+                    {{ period.end_date|date:"j M Y" }}
+                    ·
+                    {% if period.available_through %}Data available through {{ period.available_through|date:"j M" }}{% else %}Awaiting Google data{% endif %}
+                    {% if period.preliminary_days or period.pending_days %}<span class="sc-freshness-pending">({% if period.preliminary_days %}{% if period.preliminary_start == period.preliminary_end %}{{ period.preliminary_start|date:"j M" }}{% else %}{{ period.preliminary_start|date:"j M" }}–{{ period.preliminary_end|date:"j M" }}{% endif %} preliminary{% if period.pending_days %} · {% endif %}{% endif %}{% if period.pending_days %}{{ period.available_days }} of {{ period.days }} days{% endif %})</span>{% endif %}
+                </p>
+            {% endif %}
         </div>
 
-        <div class="sc-period-filter">
-            <a
-                href="?days=7"
-                class="{% if selected_days == 7 %}active{% endif %}"
-            >
-                7 Days
-            </a>
+        <div class="sc-toolbar">
+            <div class="sc-period-filter">
+                <a
+                    href="?days=7"
+                    class="{% if selected_period == '7' %}active{% endif %}"
+                >
+                    7 Days
+                </a>
 
-            <a
-                href="?days=30"
-                class="{% if selected_days == 30 %}active{% endif %}"
-            >
-                30 Days
-            </a>
+                <a
+                    href="?days=30"
+                    class="{% if selected_period == '30' %}active{% endif %}"
+                >
+                    30 Days
+                </a>
 
-            <a
-                href="?days=90"
-                class="{% if selected_days == 90 %}active{% endif %}"
-            >
-                90 Days
-            </a>
+                <a
+                    href="?days=90"
+                    class="{% if selected_period == '90' %}active{% endif %}"
+                >
+                    90 Days
+                </a>
+            </div>
+
+            <form method="get" class="sc-period-filter sc-date-form">
+                <label>
+                    <span>From</span>
+                    <input
+                        type="date"
+                        name="start"
+                        value="{{ start_date|date:'Y-m-d' }}"
+                        required
+                    >
+                </label>
+
+                <label>
+                    <span>To</span>
+                    <input
+                        type="date"
+                        name="end"
+                        value="{{ end_date|date:'Y-m-d' }}"
+                        required
+                    >
+                </label>
+
+                <button
+                    type="submit"
+                    class="{% if selected_period == 'custom' %}active{% endif %}"
+                >
+                    Apply
+                </button>
+            </form>
         </div>
     </div>
 
-    <div class="sc-date-row">
-        <span>
-            {{ start_date|date:"d M Y" }}
-            –
-            {{ end_date|date:"d M Y" }}
-        </span>
+    {% if period_error %}
 
-        {% if latest_metric_date %}
-            <span>
-                Latest data:
-                {{ latest_metric_date|date:"d M Y" }}
-            </span>
-        {% endif %}
-    </div>
+        <div class="sc-log-error">
+            {{ period_error }}
+        </div>
+
+    {% elif not summary %}
+
+        <div class="sc-panel sc-empty">
+            No Search Console data has been collected for this period
+            yet. Run <code>python manage.py collect_search_console</code>.
+        </div>
+
+    {% endif %}
 
     <div class="sc-kpi-grid">
 
@@ -71,12 +111,10 @@ Search Console Analytics
                 Total Clicks
             </span>
 
-            <strong>
-                {{ total_clicks|default:0 }}
-            </strong>
+            <strong data-kpi="clicks">{{ summary.clicks|default:0 }}</strong>
 
             <span class="sc-kpi-note">
-                Organic visits from Google
+                Property total from Google Search
             </span>
         </div>
 
@@ -85,12 +123,10 @@ Search Console Analytics
                 Total Impressions
             </span>
 
-            <strong>
-                {{ total_impressions|default:0 }}
-            </strong>
+            <strong data-kpi="impressions">{{ summary.impressions|default:0 }}</strong>
 
             <span class="sc-kpi-note">
-                Search result appearances
+                Property total search appearances
             </span>
         </div>
 
@@ -99,12 +135,10 @@ Search Console Analytics
                 Average CTR
             </span>
 
-            <strong>
-                {{ average_ctr|floatformat:2 }}%
-            </strong>
+            <strong data-kpi="ctr">{% if summary.ctr_percent is not None %}{{ summary.ctr_percent|floatformat:2 }}%{% else %}—{% endif %}</strong>
 
             <span class="sc-kpi-note">
-                Click-through rate
+                Total clicks ÷ total impressions
             </span>
         </div>
 
@@ -113,12 +147,10 @@ Search Console Analytics
                 Average Position
             </span>
 
-            <strong>
-                {{ average_position|floatformat:2 }}
-            </strong>
+            <strong data-kpi="position">{% if summary.position is not None %}{{ summary.position|floatformat:2 }}{% else %}—{% endif %}</strong>
 
             <span class="sc-kpi-note">
-                Weighted search ranking
+                Google's property average
             </span>
         </div>
 
@@ -134,7 +166,7 @@ Search Console Analytics
                     </h2>
 
                     <p>
-                        Daily clicks and impressions
+                        Daily property clicks and impressions
                     </p>
                 </div>
             </div>
@@ -164,6 +196,13 @@ Search Console Analytics
                 </div>
 
             </div>
+
+            {% if period.preliminary_days or period.pending_days %}
+                <p class="sc-note">
+                    {% if period.preliminary_days %}{% if period.preliminary_start == period.preliminary_end %}{{ period.preliminary_start|date:"j M" }}{% else %}{{ period.preliminary_start|date:"j M" }}–{{ period.preliminary_end|date:"j M" }}{% endif %}: preliminary (dashed), may still change.{% endif %}
+                    {% if period.pending_days %}{% if period.pending_start == period.pending_end %}{{ period.pending_start|date:"j M" }}{% else %}{{ period.pending_start|date:"j M" }}–{{ period.pending_end|date:"j M" }}{% endif %}: awaiting Google data (not zero).{% endif %}
+                </p>
+            {% endif %}
         </section>
 
         <section class="sc-panel">
@@ -197,8 +236,10 @@ Search Console Analytics
                 </h2>
 
                 <p>
-                    Leading Google searches for
-                    Medvolt content
+                    Query table may exclude anonymized search terms.
+                    {% if query_count %}
+                        Top {{ queries|length }} of {{ query_count }}.
+                    {% endif %}
                 </p>
             </div>
         </div>
@@ -212,12 +253,11 @@ Search Console Analytics
                         <th>Impressions</th>
                         <th>CTR</th>
                         <th>Position</th>
-                        <th>Pages</th>
                     </tr>
                 </thead>
 
                 <tbody>
-                    {% for query in top_queries %}
+                    {% for query in queries %}
                         <tr>
                             <td class="sc-query-cell">
                                 {{ query.query }}
@@ -232,21 +272,25 @@ Search Console Analytics
                             </td>
 
                             <td>
-                                {{ query.ctr_percentage|floatformat:2 }}%
+                                {% if query.ctr_percent is not None %}
+                                    {{ query.ctr_percent|floatformat:2 }}%
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
 
                             <td>
-                                {{ query.calculated_position|floatformat:2 }}
-                            </td>
-
-                            <td>
-                                {{ query.page_count }}
+                                {% if query.position is not None %}
+                                    {{ query.position|floatformat:2 }}
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
                         </tr>
                     {% empty %}
                         <tr>
                             <td
-                                colspan="6"
+                                colspan="5"
                                 class="sc-empty"
                             >
                                 No Search Console data
@@ -270,8 +314,10 @@ Search Console Analytics
                 </h2>
 
                 <p>
-                    Website pages receiving organic
-                    visibility
+                    Page totals may differ from site totals.
+                    {% if page_count %}
+                        Top {{ pages|length }} of {{ page_count }}.
+                    {% endif %}
                 </p>
             </div>
         </div>
@@ -285,20 +331,15 @@ Search Console Analytics
                         <th>Impressions</th>
                         <th>CTR</th>
                         <th>Position</th>
-                        <th>Queries</th>
                     </tr>
                 </thead>
 
                 <tbody>
-                    {% for page in top_pages %}
+                    {% for page in pages %}
                         <tr>
                             <td class="sc-page-cell">
                                 <strong>
-                                    {% if page.content__title %}
-                                        {{ page.content__title }}
-                                    {% else %}
-                                        Website Page
-                                    {% endif %}
+                                    {{ page.page_title|default:page.page_path }}
                                 </strong>
 
                                 <a
@@ -319,21 +360,25 @@ Search Console Analytics
                             </td>
 
                             <td>
-                                {{ page.ctr_percentage|floatformat:2 }}%
+                                {% if page.ctr_percent is not None %}
+                                    {{ page.ctr_percent|floatformat:2 }}%
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
 
                             <td>
-                                {{ page.calculated_position|floatformat:2 }}
-                            </td>
-
-                            <td>
-                                {{ page.query_count }}
+                                {% if page.position is not None %}
+                                    {{ page.position|floatformat:2 }}
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
                         </tr>
                     {% empty %}
                         <tr>
                             <td
-                                colspan="6"
+                                colspan="5"
                                 class="sc-empty"
                             >
                                 No page performance
@@ -354,51 +399,26 @@ Search Console Analytics
                 <h2>
                     Collector Status
                 </h2>
-
-                <p>
-                    Latest Search Console collection
-                </p>
             </div>
         </div>
 
-        {% if latest_log %}
-            <div class="sc-status-grid">
+        {% if collector %}
+            <div class="sc-status-summary">
+                <strong
+                    class="sc-status sc-status-{{ collector.status }}"
+                >
+                    {{ collector.status|title }}
+                </strong>
 
-                <div>
-                    <span>Status</span>
-
-                    <strong
-                        class="sc-status sc-status-{{ latest_log.status }}"
-                    >
-                        {{ latest_log.status|title }}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Records Processed</span>
-
-                    <strong>
-                        {{ latest_log.records_processed }}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Completed</span>
-
-                    <strong>
-                        {% if latest_log.completed_at %}
-                            {{ latest_log.completed_at|date:"d M Y, H:i" }}
-                        {% else %}
-                            In progress
-                        {% endif %}
-                    </strong>
-                </div>
-
+                <span>
+                    Last successful collection:
+                    {{ collector.last_success_at|date:"j M Y, H:i"|default:"—" }}
+                </span>
             </div>
 
-            {% if latest_log.error_message %}
+            {% if collector.error_message %}
                 <div class="sc-log-error">
-                    {{ latest_log.error_message }}
+                    {{ collector.error_message }}
                 </div>
             {% endif %}
         {% else %}
@@ -408,6 +428,172 @@ Search Console Analytics
             </p>
         {% endif %}
 
+        <details class="sc-details">
+            <summary>Data Status &amp; Collection Details</summary>
+
+            <div class="sc-status-grid">
+
+                <div>
+                    <span>Property</span>
+                    <strong>{{ period.site_url|default:"—" }}</strong>
+                </div>
+
+                <div>
+                    <span>Search type</span>
+                    <strong>{{ period.search_type|default:"web"|title }}</strong>
+                </div>
+
+                <div>
+                    <span>Data state</span>
+                    <strong>
+                        {% if period.data_state == "all" %}
+                            Final + preliminary (dataState "all")
+                        {% elif period.data_state == "final" %}
+                            Finalized (dataState "final")
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Finalized through</span>
+                    <strong>{{ period.data_through|date:"j M Y"|default:"—" }}</strong>
+                </div>
+
+                <div>
+                    <span>Preliminary dates</span>
+                    <strong>
+                        {% if period.preliminary_days %}
+                            {% if period.preliminary_start == period.preliminary_end %}
+                                {{ period.preliminary_start|date:"j M Y" }}
+                            {% else %}
+                                {{ period.preliminary_start|date:"j M" }}
+                                –
+                                {{ period.preliminary_end|date:"j M Y" }}
+                            {% endif %}
+                        {% else %}
+                            None
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Selected range</span>
+                    <strong>
+                        {% if period %}
+                            {{ period.start_date|date:"j M Y" }}
+                            –
+                            {{ period.end_date|date:"j M Y" }}
+                            ({{ period.days }} calendar day{{ period.days|pluralize }})
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Days with data</span>
+                    <strong>
+                        {% if period %}
+                            {{ period.available_days }} of {{ period.days }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Latest available date</span>
+                    <strong>{{ period.latest_available_date|date:"j M Y"|default:"—" }}</strong>
+                </div>
+
+                <div>
+                    <span>Awaiting Google data</span>
+                    <strong>
+                        {% if period.pending_days %}
+                            {% if period.pending_start == period.pending_end %}
+                                {{ period.pending_start|date:"j M Y" }}
+                            {% else %}
+                                {{ period.pending_start|date:"j M" }}
+                                –
+                                {{ period.pending_end|date:"j M Y" }}
+                            {% endif %}
+                        {% else %}
+                            None
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Timezones</span>
+                    <strong>
+                        Today: {{ period.dashboard_timezone|default:"Asia/Kolkata" }}
+                        · Google dates: {{ period.timezone|default:"America/Los_Angeles" }}
+                        · timestamps: UTC
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Range last collected</span>
+                    <strong>{{ period.last_synced|date:"j M Y, H:i"|default:"—" }}</strong>
+                </div>
+
+                <div>
+                    <span>Latest run started</span>
+                    <strong>{{ collector.started_at|date:"j M Y, H:i"|default:"—" }}</strong>
+                </div>
+
+                <div>
+                    <span>Latest run completed</span>
+                    <strong>
+                        {% if collector.completed_at %}
+                            {{ collector.completed_at|date:"j M Y, H:i" }}
+                        {% elif collector %}
+                            In progress
+                        {% else %}
+                            —
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Records processed</span>
+                    <strong>{{ collector.rows_written|default:"—" }}</strong>
+                </div>
+
+            </div>
+
+            <ul class="sc-details-notes">
+                <li>
+                    Google finalizes each date 2–3 days later. Until
+                    then it is shown as preliminary (dashed in the
+                    chart) and every collector run replaces it with
+                    Google's latest values. Dates with no Google data
+                    yet are awaiting data, never counted as zero.
+                </li>
+                <li>
+                    KPI cards, chart, queries and pages for the selected
+                    range all use the same data state, so they cover
+                    the same dates.
+                </li>
+                <li>
+                    Presets are the last 7, 30 or 90 calendar days
+                    ending today; today usually has no Google data yet.
+                </li>
+                <li>
+                    KPI cards come from Google's property totals. Query
+                    rows exclude anonymized searches and page rows count
+                    an impression per page shown, so neither table adds
+                    up to the KPI cards.
+                </li>
+                <li>
+                    Records processed is the number of database rows
+                    written by the collector, not a traffic metric.
+                </li>
+            </ul>
+        </details>
+
     </section>
 
 </div>
@@ -415,7 +601,7 @@ Search Console Analytics
 {{ daily_labels|json_script:"sc-daily-labels" }}
 {{ daily_clicks|json_script:"sc-daily-clicks" }}
 {{ daily_impressions|json_script:"sc-daily-impressions" }}
-{{ daily_ctr|json_script:"sc-daily-ctr" }}
+{{ daily_status|json_script:"sc-daily-status" }}
 {{ query_labels|json_script:"sc-query-labels" }}
 {{ query_clicks|json_script:"sc-query-clicks" }}
 
@@ -427,46 +613,37 @@ Search Console Analytics
 document.addEventListener(
     "DOMContentLoaded",
     function () {
-        const dailyLabels = JSON.parse(
-            document.getElementById(
-                "sc-daily-labels"
-            ).textContent
-        );
+        function readJson(id) {
+            return JSON.parse(
+                document.getElementById(id).textContent
+            );
+        }
 
-        const dailyClicks = JSON.parse(
-            document.getElementById(
-                "sc-daily-clicks"
-            ).textContent
-        );
+        const dailyLabels = readJson("sc-daily-labels");
+        const dailyClicks = readJson("sc-daily-clicks");
+        const dailyImpressions = readJson("sc-daily-impressions");
+        const dailyStatus = readJson("sc-daily-status");
 
-        const dailyImpressions = JSON.parse(
-            document.getElementById(
-                "sc-daily-impressions"
-            ).textContent
-        );
-
-        const queryLabels = JSON.parse(
-            document.getElementById(
-                "sc-query-labels"
-            ).textContent
-        );
-
-        const queryClicks = JSON.parse(
-            document.getElementById(
-                "sc-query-clicks"
-            ).textContent
-        );
+        function isPreliminary(index) {
+            return dailyStatus[index] === "preliminary";
+        }
+        const queryLabels = readJson("sc-query-labels");
+        const queryClicks = readJson("sc-query-clicks");
 
         const colors = window.MEDVOLT_CHART_COLORS || {
             green: "#1baf7a",
             blue: "#2a78d6",
             greenSoft: "rgba(27, 175, 122, 0.14)",
+            blueSoft: "rgba(42, 120, 214, 0.12)",
             grid: "rgba(23, 36, 31, 0.06)",
         };
 
         // Clicks and impressions live on very different scales, so this is
         // two single-axis charts rather than one dual-axis combo chart —
         // a dual y-axis makes the two lines' crossing point meaningless.
+        // Preliminary dates are drawn dashed with hollow points. Dates
+        // with no Google data are null, which leaves a gap instead of
+        // drawing a false zero.
         function buildDailyChart(canvasId, data, color, fillColor) {
             const canvas = document.getElementById(canvasId);
             if (!canvas || typeof Chart === "undefined") return;
@@ -486,6 +663,21 @@ document.addEventListener(
                             tension: 0.35,
                             fill: true,
                             pointRadius: 2,
+                            pointBackgroundColor: dailyStatus.map(
+                                function (status) {
+                                    return status === "preliminary"
+                                        ? "#ffffff"
+                                        : color;
+                                }
+                            ),
+                            segment: {
+                                borderDash: function (context) {
+                                    return isPreliminary(context.p1DataIndex)
+                                        ? [5, 4]
+                                        : undefined;
+                                },
+                            },
+                            spanGaps: false,
                         },
                     ],
                 },

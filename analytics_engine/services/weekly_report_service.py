@@ -6,7 +6,6 @@ from django.utils import timezone
 
 from analytics_engine.models import (
     MailerLiteAnalytics,
-    SearchConsoleAnalytics,
     SystemLog,
     WeeklyReport,
 )
@@ -37,6 +36,30 @@ def get_week_website_summary(week_start, week_end):
         summary = get_range_summary(week_start, week_end)
 
     return summary
+
+
+def get_week_search_totals(week_start, week_end):
+    """
+    Search Console property clicks and impressions for the week: the
+    summary report for exactly this week, or else the sum of byProperty
+    daily rows (clicks and impressions are additive across dates).
+    Never summed query or page rows, which under-count.
+    """
+
+    from analytics_engine.services.search_console_dashboard import (
+        get_daily_totals,
+        get_range_summary,
+    )
+
+    summary = get_range_summary(week_start, week_end)
+
+    if summary is not None:
+        return {
+            "clicks": summary.clicks,
+            "impressions": summary.impressions,
+        }
+
+    return get_daily_totals(week_start, week_end)
 
 
 def get_previous_completed_week(reference_date=None):
@@ -326,20 +349,9 @@ def generate_weekly_report(
             week_end,
         )
 
-        search_totals = (
-            SearchConsoleAnalytics.objects
-            .filter(
-                metric_date__range=(
-                    week_start,
-                    week_end,
-                )
-            )
-            .aggregate(
-                total_clicks=Sum("clicks"),
-                total_impressions=Sum(
-                    "impressions"
-                ),
-            )
+        search_totals = get_week_search_totals(
+            week_start,
+            week_end,
         )
 
         website_views = int(
@@ -351,17 +363,11 @@ def generate_weekly_report(
         )
 
         search_clicks = int(
-            search_totals.get(
-                "total_clicks"
-            )
-            or 0
+            search_totals["clicks"] or 0
         )
 
         search_impressions = int(
-            search_totals.get(
-                "total_impressions"
-            )
-            or 0
+            search_totals["impressions"] or 0
         )
 
         campaign_snapshots = (

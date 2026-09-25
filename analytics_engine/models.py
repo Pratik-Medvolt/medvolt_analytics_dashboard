@@ -347,6 +347,16 @@ class GA4ReportRow(GA4MetricFields):
 
 
 class SearchConsoleAnalytics(models.Model):
+    """
+    LEGACY: date x page x query rows from the previous Search Console
+    collector.
+
+    No longer written or read by the dashboard. Google omits anonymized
+    queries from query rows and aggregates page rows by page, so summing
+    these rows under-counts site clicks and impressions (see
+    SearchConsoleReport below). Kept only to preserve historical data.
+    """
+
     content = models.ForeignKey(
         Content,
         on_delete=models.SET_NULL,
@@ -396,6 +406,212 @@ class SearchConsoleAnalytics(models.Model):
 
     def __str__(self):
         return f"{self.query or 'All queries'} - {self.metric_date}"
+
+
+# ---------------------------------------------------------------------------
+# Search Console reports
+#
+# Google aggregates each Search Analytics query differently:
+#
+# - Without page/query dimensions, results are aggregated byProperty and
+#   include every click and impression.
+# - Query rows omit anonymized (rare) queries, so their sum is lower than
+#   the property total.
+# - Page rows are aggregated byPage: one result showing two pages counts an
+#   impression for each, so their impression sum is higher.
+#
+# Site totals therefore come only from a query without dimensions - never
+# from summing query or page rows.
+#
+# SearchConsoleDailyMetric - one byProperty row per date (date dimension).
+#                            Clicks and impressions may be summed across
+#                            days; CTR and position may not be averaged.
+# SearchConsoleReport      - a report fetched for an exact date range; its
+#                            rows are valid only for that range.
+#
+# Google finalizes a date 2-3 days later. Until then the date is only
+# available with dataState "all" and its values are preliminary. Every
+# collector run re-fetches the recent window, so a preliminary row is
+# replaced in place by Google's finalized values.
+# ---------------------------------------------------------------------------
+
+
+class SearchConsoleMetricFields(models.Model):
+    """Raw Search Analytics values, stored exactly as Google returns them."""
+
+    clicks = models.PositiveIntegerField(default=0)
+    impressions = models.PositiveIntegerField(default=0)
+
+    # Google's ratio (0-1). NULL when there were no impressions.
+    ctr = models.FloatField(null=True, blank=True)
+
+    # Google's average position. NULL when there were no impressions.
+    position = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+    @property
+    def ctr_percent(self):
+        """CTR = clicks / impressions * 100, unrounded."""
+        if not self.impressions:
+            return None
+        return self.clicks / self.impressions * 100
+
+
+class SearchConsoleDailyMetric(SearchConsoleMetricFields):
+    STATE_FINAL = "final"
+    STATE_PRELIMINARY = "preliminary"
+
+    DATA_STATE_CHOICES = [
+        (STATE_FINAL, "Finalized"),
+        (STATE_PRELIMINARY, "Preliminary (not yet finalized)"),
+    ]
+
+    site_url = models.CharField(max_length=255, db_index=True)
+    search_type = models.CharField(max_length=20, default="web")
+
+    # Whether Google had finalized this date when it was collected.
+    data_state = models.CharField(
+        max_length=12,
+        choices=DATA_STATE_CHOICES,
+        default=STATE_FINAL,
+    )
+
+    # Search Console date label (Pacific Time).
+    metric_date = models.DateField(db_index=True)
+
+    collected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "analytics_data_gscdailymetric"
+        ordering = ["metric_date"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "site_url",
+                    "search_type",
+                    "metric_date",
+                ],
+                name="unique_gsc_daily_date",
+            )
+        ]
+
+    def __str__(self):
+        return f"GSC {self.site_url} {self.metric_date}"
+
+
+class SearchConsoleReport(models.Model):
+    REPORT_SUMMARY = "summary"
+    REPORT_QUERY = "query"
+    REPORT_PAGE = "page"
+
+    REPORT_TYPE_CHOICES = [
+        (REPORT_SUMMARY, "Property summary"),
+        (REPORT_QUERY, "Query performance"),
+        (REPORT_PAGE, "Page performance"),
+    ]
+
+    site_url = models.CharField(max_length=255, db_index=True)
+    search_type = models.CharField(max_length=20, default="web")
+
+    # Search Analytics dataState used for every row of this report:
+    # "final" when the whole range was finalized at collection time,
+    # otherwise "all" (finalized plus preliminary dates).
+    data_state = models.CharField(max_length=10, default="final")
+
+    report_type = models.CharField(
+        max_length=20,
+        choices=REPORT_TYPE_CHOICES,
+    )
+
+    start_date = models.DateField()
+    end_date = models.DateField()
+
+    # "last_7_days", "last_30_days", "last_90_days", "week" or "custom".
+    period_key = models.CharField(
+        max_length=30,
+        default="custom",
+        db_index=True,
+    )
+
+    # responseAggregationType reported by Google (byProperty / byPage).
+    aggregation_type = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+    )
+
+    # Latest date in the range with finalized data when this report was
+    # collected. NULL when no date in the range was finalized yet.
+    data_through = models.DateField(null=True, blank=True)
+
+    # Latest date in the range with preliminary data included in this
+    # report ("all" reports only). Later dates had no Google data yet.
+    preliminary_through = models.DateField(null=True, blank=True)
+
+    row_count = models.PositiveIntegerField(default=0)
+
+    collected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "analytics_data_gscreport"
+        ordering = ["-end_date", "report_type"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "site_url",
+                    "search_type",
+                    "report_type",
+                    "start_date",
+                    "end_date",
+                ],
+                name="unique_gsc_report_dates",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"GSC {self.report_type} "
+            f"{self.start_date} to {self.end_date}"
+        )
+
+    @property
+    def covered_through(self):
+        """Latest date with any (final or preliminary) data included."""
+        return self.preliminary_through or self.data_through
+
+
+class SearchConsoleReportRow(SearchConsoleMetricFields):
+    report = models.ForeignKey(
+        SearchConsoleReport,
+        on_delete=models.CASCADE,
+        related_name="rows",
+    )
+
+    # Raw query text or page URL exactly as Google returns it. Empty for
+    # the summary report.
+    dimension_value = models.CharField(
+        max_length=2048,
+        blank=True,
+        default="",
+    )
+
+    class Meta:
+        db_table = "analytics_data_gscreportrow"
+        ordering = ["report", "-clicks", "-impressions"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["report", "dimension_value"],
+                name="unique_gsc_report_row",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.report} - {self.dimension_value or 'total'}"
 
 
 class MailerLiteAnalytics(models.Model):

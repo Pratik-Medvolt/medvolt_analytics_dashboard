@@ -95,7 +95,7 @@
         </div>
 
         <div class="kpi-description">
-            Google Search Console clicks
+            Search Console property clicks · last 30 days
         </div>
 
     </article>
@@ -318,8 +318,8 @@
             </h2>
 
             <p>
-                Google search performance for the
-                latest 30 days.
+                Property-level Google search performance
+                for the last 30 calendar days.
             </p>
         </div>
 
@@ -340,8 +340,10 @@
 
         {% if overview_search_latest_date %}
             <span>
-                Latest data:
-                {{ overview_search_latest_date|date:"d M Y" }}
+                Google data through
+                {{ overview_search_latest_date|date:"d M Y" }}{% if overview_search_preliminary_start %}
+                · from {{ overview_search_preliminary_start|date:"j M" }} preliminary{% endif %}{% if overview_search_pending_start %}
+                · later dates awaiting Google{% endif %}
             </span>
         {% endif %}
     </div>
@@ -382,7 +384,11 @@
             </span>
 
             <strong>
-                {{ overview_search_ctr|floatformat:2 }}%
+                {% if overview_search_ctr is not None %}
+                    {{ overview_search_ctr|floatformat:2 }}%
+                {% else %}
+                    —
+                {% endif %}
             </strong>
 
             <span class="sc-kpi-note">
@@ -396,11 +402,15 @@
             </span>
 
             <strong>
-                {{ overview_search_position|floatformat:2 }}
+                {% if overview_search_position is not None %}
+                    {{ overview_search_position|floatformat:2 }}
+                {% else %}
+                    —
+                {% endif %}
             </strong>
 
             <span class="sc-kpi-note">
-                Weighted Google ranking
+                Google's property average
             </span>
         </div>
 
@@ -448,7 +458,11 @@
                             </td>
 
                             <td>
-                                {{ query.ctr|floatformat:2 }}%
+                                {% if query.ctr_percent is not None %}
+                                    {{ query.ctr_percent|floatformat:2 }}%
+                                {% else %}
+                                    —
+                                {% endif %}
                             </td>
                         </tr>
                     {% empty %}

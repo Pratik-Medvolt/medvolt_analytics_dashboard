@@ -2218,3 +2218,150 @@ a {
 .dashboard-toolbar .period-button {
     white-space: nowrap;
 }
+
+/* Search Console: custom range, data availability and notes */
+.sc-toolbar {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.sc-date-form {
+    align-items: center;
+    padding-left: 10px;
+}
+
+.sc-date-form label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.sc-date-form input {
+    padding: 5px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+
+.sc-date-form button {
+    padding: 8px 13px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-soft);
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.sc-date-form button:hover {
+    background: var(--surface-soft);
+}
+
+.sc-date-form button.active {
+    color: #ffffff;
+    background: var(--primary);
+}
+
+.sc-freshness-line {
+    margin: 10px 0 0;
+    color: var(--text-soft);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.sc-freshness-pending {
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.sc-status-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.sc-details {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+}
+
+.sc-details summary {
+    cursor: pointer;
+    color: var(--primary);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.sc-details[open] summary {
+    margin-bottom: 16px;
+}
+
+.sc-details-notes {
+    margin: 16px 0 0;
+    padding-left: 18px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.sc-note {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.sc-panel .sc-note {
+    margin-top: 12px;
+}
+
+.sc-status-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sc-status-grid strong {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+    .sc-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .sc-toolbar {
+        width: 100%;
+        align-items: stretch;
+    }
+
+    .sc-date-form {
+        flex-wrap: wrap;
+    }
+
+    .sc-date-form label {
+        flex: 1 1 130px;
+    }
+
+    .sc-date-form input {
+        width: 100%;
+    }
+
+    .sc-status-grid {
+        grid-template-columns: 1fr;
+    }
+}

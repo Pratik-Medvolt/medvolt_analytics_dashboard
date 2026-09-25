@@ -7,6 +7,9 @@ from .models import (
     GA4ReportRow,
     MailerLiteAnalytics,
     SearchConsoleAnalytics,
+    SearchConsoleDailyMetric,
+    SearchConsoleReport,
+    SearchConsoleReportRow,
     SystemLog,
     WebsiteAnalytics,
     WeeklyReport,
@@ -19,6 +22,9 @@ admin.site.register(GA4DailyMetric)
 admin.site.register(GA4Report)
 admin.site.register(GA4ReportRow)
 admin.site.register(SearchConsoleAnalytics)
+admin.site.register(SearchConsoleDailyMetric)
+admin.site.register(SearchConsoleReport)
+admin.site.register(SearchConsoleReportRow)
 admin.site.register(MailerLiteAnalytics)
 admin.site.register(WeeklyReport)
 admin.site.register(SystemLog)

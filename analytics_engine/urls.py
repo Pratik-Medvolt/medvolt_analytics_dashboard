@@ -60,6 +60,12 @@ urlpatterns = [
     ),
 
     path(
+        "search-console/data.json",
+        views.search_console_data,
+        name="search_console_data",
+    ),
+
+    path(
         "system-health/",
         views.system_health,
         name="system_health",

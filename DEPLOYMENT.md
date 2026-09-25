@@ -55,7 +55,8 @@ cp .env.example .env
 > trusted origin).
 | `GOOGLE_CREDENTIALS_FILE`, `GOOGLE_SHEET_NAME` | Google service-account credentials/sheet used by the analytics collectors. |
 | `GA4_PROPERTY_ID`, `GA4_LOOKBACK_DAYS`, `WEBSITE_BASE_URL` | GA4 collector config. |
-| `SEARCH_CONSOLE_SITE_URL`, `SEARCH_CONSOLE_LOOKBACK_DAYS`, `SEARCH_CONSOLE_END_LAG_DAYS`, `SEARCH_CONSOLE_ROW_LIMIT` | Search Console collector config. |
+| `SEARCH_CONSOLE_SITE_URL`, `SEARCH_CONSOLE_LOOKBACK_DAYS`, `SEARCH_CONSOLE_ROW_LIMIT` | Search Console collector config (`SEARCH_CONSOLE_END_LAG_DAYS` is obsolete and ignored). |
+| `DASHBOARD_TIME_ZONE` | Timezone that defines "today" for the Search Console presets (default `Asia/Kolkata`); independent of Django's `TIME_ZONE`. |
 | `WEBSITE_SITEMAP_URL`, `SUBSTACK_FEED_URL` | Content discovery config. |
 | `MAILERLITE_API_KEY` | MailerLite collector config. |
 
@@ -153,7 +154,8 @@ startup, so no extra manual steps are required for normal code changes.
 
 The management commands (`collect_all`, `collect_ga4`,
 `collect_mailerlite`, `collect_search_console`, `discover_content`,
-`generate_weekly_report`) are not part of the web request cycle in this
+`generate_weekly_report`, plus the read-only `verify_ga4` / `verify_gsc`
+checks) are not part of the web request cycle in this
 app today — they're one-off/scheduled jobs. Keep that as-is (no Celery
 or Redis was introduced) and schedule them with the host's crontab,
 running them *inside* the running `web` container:

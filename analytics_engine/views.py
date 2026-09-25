@@ -5,10 +5,6 @@ from django.contrib.auth.decorators import login_required
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import (
     Avg,
-    Count,
-    ExpressionWrapper,
-    F,
-    FloatField,
     Max,
     Sum,
 )
@@ -24,12 +20,20 @@ def healthz(request):
 from analytics_engine.collectors.ga4_db_collector import (
     collect_ga4_range,
 )
+from analytics_engine.collectors.search_console_db_collector import (
+    collect_search_console_range,
+)
+from analytics_engine.collectors.search_console_reports import (
+    GSC_RETENTION_DAYS,
+    dashboard_today,
+    preset_range,
+)
 from analytics_engine.models import (
     MailerLiteAnalytics,
-    SearchConsoleAnalytics,
     SystemLog,
     WeeklyReport,
 )
+from analytics_engine.services import search_console_dashboard
 from analytics_engine.services.website_dashboard import (
     build_website_dashboard_payload,
     get_preset_range,
@@ -57,149 +61,45 @@ def get_latest_mailerlite_campaigns():
 
 
 def get_search_console_overview_data(days=30):
-    end_date = timezone.localdate()
+    """
+    Overview search block: the "N Days" preset ending today. KPIs from
+    the property summary, queries from the query report - never summed
+    rows. If today's range cannot be fetched, the latest collected
+    preset is shown with its own dates.
+    """
 
-    start_date = (
-        end_date
-        - timedelta(days=days - 1)
-    )
+    search_range = preset_range(days, dashboard_today())
 
-    search_data = (
-        SearchConsoleAnalytics.objects
-        .filter(
-            metric_date__gte=start_date,
-            metric_date__lte=end_date,
+    if ensure_search_console_range(*search_range, days=days):
+        search_range = search_console_dashboard.get_preset_range(days)
+
+    payload = (
+        search_console_dashboard.build_search_console_payload(
+            *search_range
         )
+        if search_range
+        else None
     )
 
-    weighted_position_expression = (
-        ExpressionWrapper(
-            F("average_position")
-            * F("impressions"),
-            output_field=FloatField(),
-        )
-    )
-
-    totals = search_data.aggregate(
-        clicks_total=Sum("clicks"),
-        impressions_total=Sum(
-            "impressions"
-        ),
-        position_weight_total=Sum(
-            weighted_position_expression
-        ),
-        latest_date=Max("metric_date"),
-    )
-
-    clicks = int(
-        totals.get("clicks_total") or 0
-    )
-
-    impressions = int(
-        totals.get(
-            "impressions_total"
-        )
-        or 0
-    )
-
-    position_weight = float(
-        totals.get(
-            "position_weight_total"
-        )
-        or 0
-    )
-
-    ctr = (
-        clicks / impressions * 100
-        if impressions
-        else 0
-    )
-
-    average_position = (
-        position_weight / impressions
-        if impressions
-        else 0
-    )
-
-    query_rows = list(
-        search_data
-        .exclude(query="")
-        .values("query")
-        .annotate(
-            clicks_total=Sum("clicks"),
-            impressions_total=Sum(
-                "impressions"
-            ),
-        )
-        .order_by(
-            "-clicks_total",
-            "-impressions_total",
-        )[:5]
-    )
-
-    top_queries = []
-
-    for row in query_rows:
-        query_clicks = int(
-            row.get("clicks_total") or 0
-        )
-
-        query_impressions = int(
-            row.get(
-                "impressions_total"
-            )
-            or 0
-        )
-
-        query_ctr = (
-            query_clicks
-            / query_impressions
-            * 100
-            if query_impressions
-            else 0
-        )
-
-        top_queries.append(
-            {
-                "query": row["query"],
-                "clicks": query_clicks,
-                "impressions": (
-                    query_impressions
-                ),
-                "ctr": round(
-                    query_ctr,
-                    2,
-                ),
-            }
-        )
+    summary = (payload["summary"] if payload else None) or {}
+    period = payload["period"] if payload else {}
 
     return {
-        "overview_search_clicks": clicks,
-        "overview_search_impressions": (
-            impressions
+        "overview_search_clicks": summary.get("clicks", 0),
+        "overview_search_impressions": summary.get("impressions", 0),
+        "overview_search_ctr": summary.get("ctr_percent"),
+        "overview_search_position": summary.get("position"),
+        "overview_search_latest_date": period.get("available_through"),
+        "overview_search_preliminary_start": period.get(
+            "preliminary_start"
         ),
-        "overview_search_ctr": round(
-            ctr,
-            2,
-        ),
-        "overview_search_position": round(
-            average_position,
-            2,
-        ),
-        "overview_search_latest_date": (
-            totals.get("latest_date")
-        ),
+        "overview_search_pending_start": period.get("pending_start"),
         "overview_top_queries": (
-            top_queries
+            payload["queries"][:5] if payload else []
         ),
-        "overview_search_start_date": (
-            start_date
-        ),
-        "overview_search_end_date": (
-            end_date
-        ),
+        "overview_search_start_date": period.get("start_date"),
+        "overview_search_end_date": period.get("end_date"),
     }
-
 
 
 @login_required
@@ -215,11 +115,6 @@ def overview(request):
         get_range_summary(*website_range)
         if website_range
         else None
-    )
-
-    search_totals = SearchConsoleAnalytics.objects.aggregate(
-        clicks=Sum("clicks"),
-        impressions=Sum("impressions"),
     )
 
     mailerlite_totals = mailerlite_campaigns.aggregate(
@@ -252,11 +147,6 @@ def overview(request):
             website_range[1] if website_range else None
         ),
 
-        "search_clicks": search_totals["clicks"] or 0,
-        "search_impressions": (
-            search_totals["impressions"] or 0
-        ),
-
         "newsletter_opens": (
             mailerlite_totals["opens"] or 0
         ),
@@ -281,6 +171,9 @@ def overview(request):
             days=30
         )
     )
+
+    # Same 30-day property totals as the Search Console block.
+    context["search_clicks"] = context["overview_search_clicks"]
 
     return render(
         request,
@@ -581,264 +474,163 @@ def website_dashboard_data(request):
     )
 
 
-def calculate_search_metrics(row):
+SEARCH_CONSOLE_PERIODS = {
+    "7": 7,
+    "30": 30,
+    "90": 90,
+}
+
+
+def resolve_search_console_period(request):
     """
-    Calculate CTR and weighted average position
-    from aggregated Search Console values.
+    Resolve the selected period to an inclusive (start_date, end_date).
+
+    ?start=YYYY-MM-DD&end=YYYY-MM-DD selects an exact custom range;
+    otherwise ?days=7|30|90 selects the last N calendar dates ending
+    today (DASHBOARD_TIME_ZONE), e.g. 7 Days on 25 Sep = 19-25 Sep. Dates Google
+    has no data for yet are shown as pending; the range is never
+    shifted back to Google's latest available date.
+
+    Returns (start_date, end_date, selected_period, error).
     """
 
-    clicks = int(
-        row.get(
-            "total_clicks",
-            row.get("clicks", 0),
+    start_value = request.GET.get("start")
+    end_value = request.GET.get("end")
+
+    if start_value or end_value:
+        start_date = parse_iso_date(start_value)
+        end_date = parse_iso_date(end_value)
+
+        if not start_date or not end_date:
+            return None, None, "custom", (
+                "Enter both dates as YYYY-MM-DD."
+            )
+
+        if start_date > end_date:
+            return None, None, "custom", (
+                "The start date must be on or before the end date."
+            )
+
+        today = dashboard_today()
+
+        if end_date > today:
+            return None, None, "custom", (
+                f"The end date cannot be after today ({today})."
+            )
+
+        if start_date < today - timedelta(days=GSC_RETENTION_DAYS):
+            return None, None, "custom", (
+                "Search Console keeps 16 months of data."
+            )
+
+        return start_date, end_date, "custom", None
+
+    selected_period = request.GET.get("days", "30")
+
+    if selected_period not in SEARCH_CONSOLE_PERIODS:
+        selected_period = "30"
+
+    start_date, end_date = preset_range(
+        SEARCH_CONSOLE_PERIODS[selected_period],
+        dashboard_today(),
+    )
+
+    return start_date, end_date, selected_period, None
+
+
+def ensure_search_console_range(start_date, end_date, days=None):
+    """
+    Ranges not collected yet (a custom range, or today's preset before
+    the collector has run today), or missing dates the collector has
+    stored since, are fetched on demand and stored like any other range.
+    Returns an error message or None.
+    """
+
+    if search_console_dashboard.is_range_current(start_date, end_date):
+        return None
+
+    try:
+        collect_search_console_range(
+            start_date,
+            end_date,
+            period_key=f"last_{days}_days" if days else "custom",
         )
-        or 0
-    )
-
-    impressions = int(
-        row.get(
-            "total_impressions",
-            row.get("impressions", 0),
+    except Exception as error:
+        return (
+            "Could not fetch this range from Search Console: "
+            f"{error}"
         )
-        or 0
+
+    return None
+
+
+def get_search_console_request_payload(request):
+    start_date, end_date, selected_period, error = (
+        resolve_search_console_period(request)
     )
 
-    weighted_position = float(
-        row.get(
-            "weighted_position_sum",
-            row.get("weighted_position", 0),
+    if start_date and not error:
+        error = ensure_search_console_range(
+            start_date,
+            end_date,
+            days=SEARCH_CONSOLE_PERIODS.get(selected_period),
         )
-        or 0
-    )
 
-    ctr = (
-        clicks / impressions * 100
-        if impressions
-        else 0
-    )
+    payload = None
 
-    average_position = (
-        weighted_position / impressions
-        if impressions
-        else 0
-    )
+    if start_date and not error:
+        payload = search_console_dashboard.build_search_console_payload(
+            start_date,
+            end_date,
+        )
 
-    return {
-        **row,
-        "clicks": clicks,
-        "impressions": impressions,
-        "ctr_percentage": round(ctr, 2),
-        "calculated_position": round(
-            average_position,
-            2,
-        ),
-    }
-
+    return start_date, end_date, selected_period, error, payload
 
 
 @login_required
 def search_console(request):
-    allowed_periods = {
-        7,
-        30,
-        90,
-    }
+    """
+    Search Console dashboard.
 
-    try:
-        selected_days = int(
-            request.GET.get(
-                "days",
-                30,
-            )
-        )
-    except (TypeError, ValueError):
-        selected_days = 30
+    KPI cards, daily chart, queries and pages each come from their own
+    Search Analytics report for the exact selected range - see
+    services/search_console_dashboard.py.
+    """
 
-    if selected_days not in allowed_periods:
-        selected_days = 30
-
-    end_date = timezone.localdate()
-
-    start_date = (
-        end_date
-        - timedelta(
-            days=selected_days - 1
-        )
+    start_date, end_date, selected_period, error, payload = (
+        get_search_console_request_payload(request)
     )
 
-    search_data = (
-        SearchConsoleAnalytics.objects
-        .filter(
-            metric_date__gte=start_date,
-            metric_date__lte=end_date,
-        )
-        .select_related("content")
-    )
+    daily = payload["daily"] if payload else []
+    queries = payload["queries"] if payload else []
+    pages = payload["pages"] if payload else []
 
-    weighted_position_expression = (
-        ExpressionWrapper(
-            F("average_position")
-            * F("impressions"),
-            output_field=FloatField(),
-        )
-    )
-
-    totals = search_data.aggregate(
-        total_clicks=Sum("clicks"),
-        total_impressions=Sum("impressions"),
-        weighted_position_sum=Sum(
-            weighted_position_expression
-        ),
-        latest_metric_date=Max(
-            "metric_date"
-        ),
-    )
-
-    total_metrics = calculate_search_metrics(
-        totals
-    )
-
-    daily_rows = list(
-        search_data
-        .values("metric_date")
-        .annotate(
-            total_clicks=Sum("clicks"),
-            total_impressions=Sum(
-                "impressions"
-            ),
-            weighted_position_sum=Sum(
-                weighted_position_expression
-        )   ,
-        )
-        .order_by("metric_date")
-    )
-
-    daily_metrics = [
-        calculate_search_metrics(row)
-        for row in daily_rows
-    ]
-
-    query_rows = list(
-        search_data
-        .exclude(query="")
-        .values("query")
-        .annotate(
-            total_clicks=Sum("clicks"),
-            total_impressions=Sum(
-                "impressions"
-            ),
-            weighted_position_sum=Sum(
-                weighted_position_expression
-            ),
-            page_count=Count(
-                "page_url",
-                distinct=True,
-            ),
-        )
-        .order_by(
-            "-total_clicks",
-            "-total_impressions",
-        )[:20]
-    )
-
-    top_queries = [
-        calculate_search_metrics(row)
-        for row in query_rows
-    ]
-
-    page_rows = list(
-        search_data
-        .values(
-            "page_url",
-            "content__title",
-        )
-        .annotate(
-            total_clicks=Sum("clicks"),
-            total_impressions=Sum(
-                "impressions"
-            ),
-            weighted_position_sum=Sum(
-                weighted_position_expression
-            ),
-            query_count=Count(
-                "query",
-                distinct=True,
-            ),
-        )
-        .order_by(
-            "-total_clicks",
-            "-total_impressions",
-        )[:20]
-    )
-
-    top_pages = [
-        calculate_search_metrics(row)
-        for row in page_rows
-    ]
-
-    latest_log = (
-        SystemLog.objects
-        .filter(
-            module="search_console_collector"
-        )
-        .order_by("-id")
-        .first()
-    )
+    top_queries = queries[:10]
 
     context = {
         "page_title": "Search Console Analytics",
 
-        "selected_days": selected_days,
+        "selected_period": selected_period,
         "start_date": start_date,
         "end_date": end_date,
+        "period_error": error,
 
-        "total_clicks": total_metrics[
-            "clicks"
-        ],
-        "total_impressions": total_metrics[
-            "impressions"
-        ],
-        "average_ctr": total_metrics[
-            "ctr_percentage"
-        ],
-        "average_position": total_metrics[
-            "calculated_position"
-        ],
-        "latest_metric_date": totals.get(
-            "latest_metric_date"
-        ),
+        "period": payload["period"] if payload else None,
+        "summary": payload["summary"] if payload else None,
+        "queries": queries[:25],
+        "query_count": len(queries),
+        "pages": pages[:25],
+        "page_count": len(pages),
+        "collector": search_console_dashboard.serialize_collector(),
 
-        "top_queries": top_queries,
-        "top_pages": top_pages,
-        "latest_log": latest_log,
+        # Pending dates are null so the chart shows a gap, not a zero.
+        "daily_labels": [row["date"].strftime("%d %b") for row in daily],
+        "daily_clicks": [row["clicks"] for row in daily],
+        "daily_impressions": [row["impressions"] for row in daily],
+        "daily_status": [row["status"] for row in daily],
 
-        "daily_labels": [
-            row["metric_date"].strftime(
-                "%d %b"
-            )
-            for row in daily_metrics
-        ],
-        "daily_clicks": [
-            row["clicks"]
-            for row in daily_metrics
-        ],
-        "daily_impressions": [
-            row["impressions"]
-            for row in daily_metrics
-        ],
-        "daily_ctr": [
-            row["ctr_percentage"]
-            for row in daily_metrics
-        ],
-
-        "query_labels": [
-            row["query"]
-            for row in top_queries[:10]
-        ],
-        "query_clicks": [
-            row["clicks"]
-            for row in top_queries[:10]
-        ],
+        "query_labels": [row["query"] for row in top_queries],
+        "query_clicks": [row["clicks"] for row in top_queries],
     }
 
     return render(
@@ -846,6 +638,26 @@ def search_console(request):
         "dashboard/search_console.html",
         context,
     )
+
+
+@login_required
+def search_console_data(request):
+    """JSON form of the Search Console dashboard data."""
+
+    start_date, _, _, error, payload = (
+        get_search_console_request_payload(request)
+    )
+
+    if error:
+        return JsonResponse({"error": error}, status=400)
+
+    if not start_date:
+        return JsonResponse(
+            {"error": "No Search Console data has been collected yet."},
+            status=404,
+        )
+
+    return JsonResponse(payload, encoder=DjangoJSONEncoder)
 
 
 def calculate_report_change(
